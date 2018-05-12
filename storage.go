@@ -3,15 +3,17 @@ package main
 import (
 	"os"
 	"net/http"
-	"fmt"
 	"encoding/json"
 	"net/url"
 	"path"
 	"strings"
 	"io/ioutil"
+	"log"
+	"flag"
 )
 
-const basedir = "/tmp"
+const defaultBasedir = "/tmp"
+var basedir	string
 
 type Response struct {
 	Code int
@@ -76,7 +78,7 @@ type StorageDirContent struct {
 // ResponseBody implementation
 
 func (f *StorageFile) toBytes() []byte {
-	bytes, _:= json.Marshal(f)
+	bytes, _ := json.Marshal(f)
 	return bytes
 }
 
@@ -96,10 +98,10 @@ func (f *StorageFileContent) load() {
 }
 
 func (r *Response) parseRequest(requestUri string) (filepath string, opts url.Values, err error) {
-	if reqUrl, err := url.ParseRequestURI(requestUri); err == nil {
-		filepath = path.Clean(basedir + reqUrl.Path)
+	if reqURL, err := url.ParseRequestURI(requestUri); err == nil {
+		filepath = path.Clean(basedir + reqURL.Path)
 		if strings.HasPrefix(filepath, basedir) {
-			opts, _ := url.ParseQuery(reqUrl.RawQuery)
+			opts, _ := url.ParseQuery(reqURL.RawQuery)
 			return filepath, opts, nil
 		}
 	}
@@ -111,7 +113,7 @@ func (r *Response) parseRequest(requestUri string) (filepath string, opts url.Va
 func (r *Response) getContent(filepath string, opts url.Values) {
 	fileInfo, err := os.Stat(filepath)
 
-	if  err != nil {
+	if err != nil {
 		r.Code = http.StatusNotFound
 		r.Body = &Message{Msg: err.Error()}
 		return
@@ -127,7 +129,7 @@ func (r *Response) getContent(filepath string, opts url.Values) {
 				},
 			nil,
 		}
-		files,_ := ioutil.ReadDir(filepath)
+		files, _ := ioutil.ReadDir(filepath)
 		size = int64(len(files))
 	} else {
 		content = &StorageFileContent{
@@ -165,22 +167,26 @@ func (r *Response) deleteContent(filepath string) {
 }
 
 func (r *Response) createContent(filepath string, content []byte) {
-	if file, err := os.Create(filepath); err != nil {
+	file, err := os.Create(filepath);
+	if err != nil {
 		r.Code = http.StatusInternalServerError
 		r.Body = &Message{Msg: err.Error()}
-	} else {
-		if content != nil {
-			file.Write(content)
-		}
-		file.Close()
-		r.Code = http.StatusOK
-		r.Body = &Message{filepath + " created"}
+		return 
 	}
+	defer file.Close()
+	if content != nil {
+		file.Write(content)
+	}
+	r.Code = http.StatusOK
+	r.Body = &Message{filepath + " created"}
 }
 
-func main()  {
-	http.HandleFunc("/", func (responseWriter http.ResponseWriter, request *http.Request) {
-		response := &Response{Code:http.StatusMethodNotAllowed, Body:nil}
+func main() {
+	flag.StringVar(&basedir, "basedir", defaultBasedir, "The directory with files")
+	flag.Parse()
+	
+	http.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
+		response := &Response{Code: http.StatusMethodNotAllowed, Body:nil}
 
 		if filepath, opts, err := response.parseRequest(request.RequestURI); err == nil {
 			switch request.Method {
@@ -202,5 +208,5 @@ func main()  {
 		}
 	})
 
-	fmt.Errorf("%v", http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
