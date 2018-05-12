@@ -190,13 +190,16 @@ func main() {
 
 		if filepath, opts, err := response.parseRequest(request.RequestURI); err == nil {
 			switch request.Method {
-				case http.MethodGet: {
+			case http.MethodGet:
+				{
 					response.getContent(filepath, opts)
 				}
-				case http.MethodDelete: {
+			case http.MethodDelete:
+				{
 					response.deleteContent(filepath)
 				}
-				case http.MethodPut: {
+			case http.MethodPut:
+				{
 					response.createContent(filepath, nil)
 				}
 			}
