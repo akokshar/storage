@@ -34,7 +34,7 @@ type Message struct {
 }
 
 type StorageContent interface {
-	 load()
+	 loadContent(contentPath string) error
 }
 
 /*
@@ -57,7 +57,7 @@ type StorageFile struct {
 
 /*
  Actual content is represented by StorageFileContent and StorageDirContent
- these implemends StorageContent interface
+ these implements StorageContent interface
  */
 
 type StorageContentInfo struct {
@@ -67,7 +67,7 @@ type StorageContentInfo struct {
 
 type StorageFileContent struct {
 	StorageContentInfo
-	FileContent	string `json:"data"`
+	FileContent	*string `json:"data"`
 }
 
 type StorageDirContent struct {
@@ -78,7 +78,7 @@ type StorageDirContent struct {
 // ResponseBody implementation
 
 func (f *StorageFile) toBytes() []byte {
-	bytes, _ := json.Marshal(f)
+	bytes, _ := json.MarshalIndent(f, "", "  ")
 	return bytes
 }
 
@@ -89,13 +89,29 @@ func (e *Message) toBytes() []byte {
 
 // StorageContent implementation
 
-func (d *StorageDirContent) load() {
+func (d *StorageDirContent) loadContent(contentPath string) error {
+	fis, err := ioutil.ReadDir(contentPath)
+	if err != nil {
+		return err
+	}
 
+
+	d.Files = make([]StorageFileInfo, len(fis))
+
+	for i, fi := range fis {
+		d.Files[i].Name = fi.Name()
+		d.Files[i].IsDirectory = fi.IsDir()
+		d.Files[i].ModDate = fi.ModTime().Unix()
+		d.Files[i].Size = fi.Size()
+	}
+	return nil
 }
 
-func (f *StorageFileContent) load() {
-
+func (f *StorageFileContent) loadContent(contentPath string) error {
+	return nil
 }
+
+//
 
 func (r *Response) parseRequest(requestUri string) (filepath string, opts url.Values, err error) {
 	if reqURL, err := url.ParseRequestURI(requestUri); err == nil {
@@ -112,7 +128,6 @@ func (r *Response) parseRequest(requestUri string) (filepath string, opts url.Va
 
 func (r *Response) getContent(filepath string, opts url.Values) {
 	fileInfo, err := os.Stat(filepath)
-
 	if err != nil {
 		r.Code = http.StatusNotFound
 		r.Body = &Message{Msg: err.Error()}
@@ -137,12 +152,16 @@ func (r *Response) getContent(filepath string, opts url.Values) {
 				Offset:0,
 				Count:0,
 			},
-			"",
+			nil,
 		}
 		size = fileInfo.Size()
 	}
 
-	content.load()
+	if err := content.loadContent(filepath); err != nil {
+		r.Code = http.StatusInternalServerError
+		r.Body = &Message{Msg: err.Error()}
+		return
+	}
 
 	r.Code = http.StatusOK
 	r.Body = &StorageFile{
@@ -184,7 +203,7 @@ func (r *Response) createContent(filepath string, content []byte) {
 func main() {
 	flag.StringVar(&basedir, "basedir", defaultBasedir, "The directory with files")
 	flag.Parse()
-	
+
 	http.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
 		response := &Response{Code: http.StatusMethodNotAllowed, Body:nil}
 
