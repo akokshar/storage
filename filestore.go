@@ -7,6 +7,7 @@ import (
 	"os"
 	"io/ioutil"
 	"encoding/json"
+	"strconv"
 )
 
 type FileStoreItem interface {
@@ -32,6 +33,11 @@ type fileStoreItemInfo struct {
 	files		[]os.FileInfo
 }
 
+const DirListOffsetOptName = "offset"
+const defaultDirListOffset = 0
+const DirListCountOptName = "count"
+const defaultDirListCount = 10
+
 type fileStoreDirContent struct {
 	Offset	int					`json:"offset"`
 	Count	int					`json:"count"`
@@ -53,8 +59,8 @@ type storeFile struct {
 }
 
 func InitFileStoreItem(basepath string, itempath string) (FileStoreItem, error) {
-	filepath := path.Join(basedir, itempath)
-	if strings.HasPrefix(filepath, basedir) {
+	filepath := path.Join(basepath, itempath)
+	if strings.HasPrefix(filepath, basepath) {
 		return &fileStoreItem{filepath}, nil
 	}
 	return nil, errors.New("Wrong path")
@@ -100,20 +106,32 @@ func (storeItem *fileStoreItem) GetJson(opts map[string]string) ([]byte, error) 
 	var result interface{}
 
 	if itemInfo.IsDirectory {
-		offset := 0
-		count := 0
+		var offset int
+		var count int
+
+		if offset, err = strconv.Atoi(opts[DirListOffsetOptName]); err != nil {
+			offset = defaultDirListOffset
+		}
+
+		if count, err = strconv.Atoi(opts[DirListCountOptName]); err != nil {
+			count = defaultDirListCount
+		}
+
+		if tailLen := len(itemInfo.files) - offset; tailLen < count {
+			count = tailLen
+		}
 
 		dir := &storeDir{
 			*itemInfo,
 			fileStoreDirContent{
 				Offset: offset,
 				Count: count,
-				Files: make([]*fileStoreItemInfo, len(itemInfo.files)),
+				Files: make([]*fileStoreItemInfo, count),
 			},
 		}
 
-		for i, file := range itemInfo.files {
-			childItem, _ := InitFileStoreItem(storeItem.getPath(), file.Name())
+		for i := 0; i < count; i++ {
+			childItem, _ := InitFileStoreItem(storeItem.getPath(), itemInfo.files[i + offset].Name())
 			childItemInfo, _ := childItem.createFileStoreItemInfo()
 			dir.Content.Files[i] =  childItemInfo
 		}

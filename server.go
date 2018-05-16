@@ -9,7 +9,6 @@ import (
 )
 
 const defaultBasedir = "/tmp"
-var basedir	string
 
 type response struct {
 	code int
@@ -26,7 +25,8 @@ func (r *response) setBody() {
 	r.code = http.StatusOK
 }
 
-func main()  {
+func main() {
+	var basedir	string
 	flag.StringVar(&basedir, "basedir", defaultBasedir, "The directory with files")
 	flag.Parse()
 
@@ -45,14 +45,21 @@ func main()  {
 			switch request.Method {
 			case http.MethodGet:
 				{
-					//opts, _ := url.ParseQuery(reqURL.RawQuery)
-					r.body, err = storeItem.GetJson(nil)
+					opts := make(map[string]string)
+					if reqOpts, err := url.ParseQuery(reqURL.RawQuery); err == nil {
+						if offset := reqOpts[DirListOffsetOptName]; offset != nil {
+							opts[DirListOffsetOptName] = offset[0]
+						}
+						if count := reqOpts[DirListCountOptName]; count != nil {
+							opts[DirListCountOptName] = count[0]
+						}
+					}
+					r.body, err = storeItem.GetJson(opts)
 					if err != nil {
 						r.serErrorMessage(http.StatusInternalServerError, err.Error())
 					} else {
 						r.code = http.StatusOK
 					}
-
 				}
 			case http.MethodDelete:
 				{
