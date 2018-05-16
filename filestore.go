@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"encoding/json"
 	"strconv"
+	"encoding/base64"
 )
 
 type FileStoreItem interface {
@@ -55,7 +56,7 @@ type fileStoreFileContent struct {
 
 type storeFile struct {
 	fileStoreItemInfo
-	content fileStoreFileContent	`json:"content"`
+	Content fileStoreFileContent	`json:"content"`
 }
 
 func InitFileStoreItem(basepath string, itempath string) (FileStoreItem, error) {
@@ -138,13 +139,17 @@ func (storeItem *fileStoreItem) GetJson(opts map[string]string) ([]byte, error) 
 
 		result = dir
 	} else {
-		file := &storeFile{
-			*itemInfo,
-			fileStoreFileContent{
-				B64str:"",
-			},
+		if file, err := os.Open(storeItem.filepath); err == nil {
+			buf := make([]byte, itemInfo.Size)
+			if _, err := file.Read(buf); err == nil {
+				result = &storeFile{
+					*itemInfo,
+					fileStoreFileContent{
+						B64str:base64.StdEncoding.EncodeToString(buf),
+					},
+				}
+			}
 		}
-		result = file
 	}
 
 	jsonResult, err := json.Marshal(result)
