@@ -12,6 +12,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 const defaultBasedir = "/tmp"
@@ -23,6 +24,8 @@ const defaultDirListOffset = 0
 
 const DirListCountOptName = "count"
 const defaultDirListCount = 10
+
+const DirCreateOptName	= "directory"
 
 type storeItemInfo struct {
 	Name        string `json:"name"`
@@ -160,7 +163,52 @@ func (s *server) processGet() {
 }
 
 func (s *server) processPost() {
+	if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
+		if reqIsDir := reqOpts[DirCreateOptName]; reqIsDir != nil {
+			if err := os.Mkdir(s.itemFilePath, os.ModeDir); err != nil {
+				s.responseWriter.WriteHeader(http.StatusInternalServerError)
+			}
+		} else {
+			if _, err := os.Stat(s.itemFilePath); err == nil {
+				s.responseWriter.WriteHeader(http.StatusConflict)
+				return
+			}
 
+			file, err := os.Create(s.itemFilePath)
+			if err != nil {
+				e, _ := err.(*os.PathError)
+				switch e.Err {
+				case syscall.EACCES:
+					{
+						s.responseWriter.WriteHeader(http.StatusForbidden)
+					}
+				case syscall.ENOENT:
+					{
+						s.responseWriter.WriteHeader(http.StatusNoContent)
+					}
+				default:
+					{
+						s.responseWriter.WriteHeader(http.StatusInternalServerError)
+					}
+				}
+				return
+			}
+			defer file.Close()
+
+			var content []byte = make([]byte, 1024)
+			for written := int64(0); written < s.request.ContentLength; {
+				n, err := s.request.Body.Read(content)
+				if err != nil {
+					s.responseWriter.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				file.Write(content[:n])
+				written += int64(n)
+			}
+
+			s.responseWriter.WriteHeader(http.StatusCreated)
+		}
+	}
 }
 
 func (s *server) processDelete() {
@@ -172,7 +220,7 @@ func (s *server) processDelete() {
 
 func (s *server) processReqiest() {
 	switch s.request.Method {
-	case s.request.Method:
+	case http.MethodGet:
 		{
 			s.processGet()
 		}
