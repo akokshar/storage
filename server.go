@@ -1,21 +1,22 @@
 package main
 
 import (
-	"flag"
-	"net/http"
-	"log"
-	"net/url"
 	"encoding/json"
-	"os"
+	"errors"
+	"flag"
 	"io/ioutil"
-	"strings"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
 	"path"
 	"strconv"
-	"errors"
+	"strings"
 )
 
 const defaultBasedir = "/tmp"
-var basedir	string
+
+var basedir string
 
 const DirListOffsetOptName = "offset"
 const defaultDirListOffset = 0
@@ -24,30 +25,30 @@ const DirListCountOptName = "count"
 const defaultDirListCount = 10
 
 type storeItemInfo struct {
-	Name		string	`json:"name"`
-	IsDirectory	bool	`json:"directory"`
-	ModDate		int64	`json:"create_date"`
-	Size		int64	`json:"size"`
+	Name        string `json:"name"`
+	IsDirectory bool   `json:"directory"`
+	ModDate     int64  `json:"create_date"`
+	Size        int64  `json:"size"`
 
-	files		[]os.FileInfo
+	files []os.FileInfo
 }
 
 type storeDirContent struct {
-	Offset	int					`json:"offset"`
-	Count	int					`json:"count"`
-	Files	[]*storeItemInfo	`json:"files"`
+	Offset int              `json:"offset"`
+	Count  int              `json:"count"`
+	Files  []*storeItemInfo `json:"files"`
 }
 
 type storeDirInfo struct {
 	storeItemInfo
-	Content storeDirContent	`json:"content"`
+	Content storeDirContent `json:"content"`
 }
 
 type server struct {
 	responseWriter http.ResponseWriter
-	request *http.Request
-	reqURL *url.URL
-	itemFilePath string
+	request        *http.Request
+	reqURL         *url.URL
+	itemFilePath   string
 }
 
 func (s *server) initWith(responseWriter http.ResponseWriter, request *http.Request) error {
@@ -107,7 +108,7 @@ func (s *server) processGet() {
 
 		dirFilesInfo := make([]*storeItemInfo, count)
 		for i := 0; i < count; i++ {
-			childFilePath := path.Join(s.itemFilePath, dirFiles[i + offset].Name())
+			childFilePath := path.Join(s.itemFilePath, dirFiles[i+offset].Name())
 			if childFileInfo, err := os.Stat(childFilePath); err == nil {
 				var childSize int64
 				if childFileInfo.IsDir() {
@@ -118,29 +119,29 @@ func (s *server) processGet() {
 				}
 
 				dirFilesInfo[i] = &storeItemInfo{
-					Name:childFileInfo.Name(),
-					IsDirectory:childFileInfo.IsDir(),
-					ModDate:childFileInfo.ModTime().Unix(),
-					Size:childSize,
+					Name:        childFileInfo.Name(),
+					IsDirectory: childFileInfo.IsDir(),
+					ModDate:     childFileInfo.ModTime().Unix(),
+					Size:        childSize,
 				}
 			}
 		}
 
 		dir := &storeDirInfo{
 			storeItemInfo{
-				Name:itemFileInfo.Name(),
-				IsDirectory:true,
-				ModDate:itemFileInfo.ModTime().Unix(),
-				Size:int64(dirSize),
+				Name:        itemFileInfo.Name(),
+				IsDirectory: true,
+				ModDate:     itemFileInfo.ModTime().Unix(),
+				Size:        int64(dirSize),
 			},
 			storeDirContent{
 				Offset: offset,
-				Count: count,
-				Files: dirFilesInfo,
+				Count:  count,
+				Files:  dirFilesInfo,
 			},
 		}
 
-		dirJson, _ := json.MarshalIndent(dir,"", "  ")
+		dirJson, _ := json.MarshalIndent(dir, "", "  ")
 		s.responseWriter.Header().Add("Content-Type", "application/json")
 		s.responseWriter.Write(dirJson)
 
@@ -190,7 +191,7 @@ func (s *server) processReqiest() {
 	}
 }
 
-func main()  {
+func main() {
 	flag.StringVar(&basedir, "basedir", defaultBasedir, "The directory with files")
 	flag.Parse()
 
