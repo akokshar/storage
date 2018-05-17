@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,16 +18,18 @@ import (
 )
 
 const defaultBasedir = "/tmp"
+const defaultPort = "8080"
 
-var basedir string
-
-const DirListOffsetOptName = "offset"
+const dirListOffsetOptName = "offset"
 const defaultDirListOffset = 0
 
-const DirListCountOptName = "count"
+const dirListCountOptName = "count"
 const defaultDirListCount = 10
 
-const DirCreateOptName	= "directory"
+const dirCreateOptName = "directory"
+
+var basedir string
+var port string
 
 type storeItemInfo struct {
 	Name        string `json:"name"`
@@ -83,21 +87,23 @@ func (s *server) processGet() {
 		s.responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-
-	if itemFileInfo.IsDir() {
+	if !itemFileInfo.IsDir() {
+		http.ServeFile(s.responseWriter, s.request, s.itemFilePath)
+	} else {
 		dirFiles, _ := ioutil.ReadDir(s.itemFilePath)
 		dirSize := len(dirFiles)
 
 		var offset, count int
 		if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
-			if reqOffset := reqOpts[DirListOffsetOptName]; reqOffset != nil {
+			if reqOffset := reqOpts[dirListOffsetOptName]; reqOffset != nil {
 				if offset, err = strconv.Atoi(reqOffset[0]); err != nil {
 					offset = defaultDirListOffset
 				}
 			} else {
 				offset = defaultDirListOffset
 			}
-			if reqCount := reqOpts[DirListCountOptName]; reqCount != nil {
+
+			if reqCount := reqOpts[dirListCountOptName]; reqCount != nil {
 				if count, err = strconv.Atoi(reqCount[0]); err != nil {
 					count = defaultDirListCount
 				}
@@ -144,27 +150,15 @@ func (s *server) processGet() {
 			},
 		}
 
-		dirJson, _ := json.MarshalIndent(dir, "", "  ")
+		dirJSON, _ := json.MarshalIndent(dir, "", "  ")
 		s.responseWriter.Header().Add("Content-Type", "application/json")
-		s.responseWriter.Write(dirJson)
-
-	} else {
-		if file, err := os.Open(s.itemFilePath); err == nil {
-			buf := make([]byte, itemFileInfo.Size())
-			if _, err := file.Read(buf); err != nil {
-				log.Print(err.Error())
-				s.responseWriter.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			s.responseWriter.Header().Add("Content-Type", http.DetectContentType(buf))
-			s.responseWriter.Write(buf)
-		}
+		s.responseWriter.Write(dirJSON)
 	}
 }
 
 func (s *server) processPost() {
 	if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
-		if reqIsDir := reqOpts[DirCreateOptName]; reqIsDir != nil {
+		if reqIsDir := reqOpts[dirCreateOptName]; reqIsDir != nil {
 			if err := os.Mkdir(s.itemFilePath, os.ModeDir); err != nil {
 				s.responseWriter.WriteHeader(http.StatusInternalServerError)
 			}
@@ -195,15 +189,10 @@ func (s *server) processPost() {
 			}
 			defer file.Close()
 
-			var content []byte = make([]byte, 1024)
-			for written := int64(0); written < s.request.ContentLength; {
-				n, err := s.request.Body.Read(content)
-				if err != nil {
-					s.responseWriter.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				file.Write(content[:n])
-				written += int64(n)
+			n, err := io.Copy(file, s.request.Body)
+			if err != nil || n != s.request.ContentLength {
+				s.responseWriter.WriteHeader(http.StatusInternalServerError)
+				return
 			}
 
 			s.responseWriter.WriteHeader(http.StatusCreated)
@@ -218,7 +207,7 @@ func (s *server) processDelete() {
 	}
 }
 
-func (s *server) processReqiest() {
+func (s *server) processRequest() {
 	switch s.request.Method {
 	case http.MethodGet:
 		{
@@ -241,14 +230,15 @@ func (s *server) processReqiest() {
 
 func main() {
 	flag.StringVar(&basedir, "basedir", defaultBasedir, "The directory with files")
+	flag.StringVar(&port, "port", defaultPort, "Listen port")
 	flag.Parse()
 
 	http.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
 		var s server
 		if err := s.initWith(responseWriter, request); err == nil {
-			s.processReqiest()
+			s.processRequest()
 		}
 	})
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
 }
