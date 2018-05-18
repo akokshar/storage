@@ -46,11 +46,6 @@ type storeDirContent struct {
 	Files  []*storeItemInfo `json:"files"`
 }
 
-type storeDirInfo struct {
-	storeItemInfo
-	Content storeDirContent `json:"content"`
-}
-
 type server struct {
 	responseWriter http.ResponseWriter
 	request        *http.Request
@@ -136,18 +131,10 @@ func (s *server) processGet() {
 			}
 		}
 
-		dir := &storeDirInfo{
-			storeItemInfo{
-				Name:        itemFileInfo.Name(),
-				IsDirectory: true,
-				ModDate:     itemFileInfo.ModTime().Unix(),
-				Size:        int64(dirSize),
-			},
-			storeDirContent{
-				Offset: offset,
-				Count:  count,
-				Files:  dirFilesInfo,
-			},
+		dir := &storeDirContent{
+			Offset: offset,
+			Count:  count,
+			Files:  dirFilesInfo,
 		}
 
 		dirJSON, _ := json.MarshalIndent(dir, "", "  ")
@@ -157,6 +144,10 @@ func (s *server) processGet() {
 }
 
 func (s *server) processPost() {
+	/*  TODO:
+		server should respond with storeDirContent{... offset=x, count=1,...}
+		this will enable client to update interface properly without reloading whole directory
+	*/
 	if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
 		if reqIsDir := reqOpts[dirCreateOptName]; reqIsDir != nil {
 			if err := os.Mkdir(s.itemFilePath, os.ModeDir); err != nil {
@@ -197,6 +188,8 @@ func (s *server) processPost() {
 
 			s.responseWriter.WriteHeader(http.StatusCreated)
 		}
+	} else {
+		s.responseWriter.WriteHeader(http.StatusBadRequest)
 	}
 }
 
