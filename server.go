@@ -33,11 +33,9 @@ var port string
 
 type storeItemInfo struct {
 	Name        string `json:"name"`
-	IsDirectory bool   `json:"directory"`
-	ModDate     int64  `json:"create_date"`
+	IsDirectory bool   `json:"is_dir"`
+	ModDate     int64  `json:"c_date"`
 	Size        int64  `json:"size"`
-
-	files []os.FileInfo
 }
 
 type storeDirContent struct {
