@@ -34,13 +34,13 @@ var port string
 type storeItemInfo struct {
 	Name        string `json:"name"`
 	IsDirectory bool   `json:"is_dir"`
-	ModDate     int64  `json:"c_date"`
+	ModDate     int64  `json:"m_date"`
 	Size        int64  `json:"size"`
 }
 
 type storeDirContent struct {
 	Offset int              `json:"offset"`
-	Count  int              `json:"count"`
+	//Count  int              `json:"count"`
 	Files  []*storeItemInfo `json:"files"`
 }
 
@@ -131,7 +131,7 @@ func (s *server) processGet() {
 
 		dir := &storeDirContent{
 			Offset: offset,
-			Count:  count,
+			//Count:  count,
 			Files:  dirFilesInfo,
 		}
 
