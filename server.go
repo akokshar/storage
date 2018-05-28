@@ -148,7 +148,7 @@ func (s *server) processPost() {
 	*/
 	if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
 		if reqIsDir := reqOpts[dirCreateOptName]; reqIsDir != nil {
-			if err := os.Mkdir(s.itemFilePath, os.ModeDir); err != nil {
+			if err := os.Mkdir(s.itemFilePath, 0755); err != nil {
 				s.responseWriter.WriteHeader(http.StatusInternalServerError)
 			}
 		} else {
