@@ -169,8 +169,16 @@ func (s *server) processPost() {
 			dirPath, dirName := path.Split(s.itemFilePath)
 			dirFiles, _ := getSortedDirContent(dirPath)
 
+			for i := 0; i < len(dirFiles); i++ {
+				fmt.Println(i, dirFiles[i].Name())
+			}
+
 			offset := sort.Search(len(dirFiles), func(i int) bool {
-				return strings.ToLower(dirFiles[i].Name()) >= strings.ToLower(dirName)
+				fmt.Println(i, dirFiles[i].Name(), dirName)
+				if dirFiles[i].IsDir() {
+					return strings.ToLower(dirFiles[i].Name()) >= strings.ToLower(dirName)
+				}
+				return true
 			})
 
 			content := &storeDirContent{
