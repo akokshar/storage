@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"sort"
 )
 
 const defaultBasedir = "/tmp"
@@ -51,6 +52,20 @@ type server struct {
 	itemFilePath   string
 }
 
+func getSortedDirContent(dirPath string) ([]os.FileInfo, error) {
+	dirContent, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(dirContent, func (i int, j int) bool {
+		if dirContent[i].IsDir() == dirContent[j].IsDir() {
+			return strings.ToLower(dirContent[i].Name()) < strings.ToLower(dirContent[j].Name())
+		}
+		return dirContent[i].IsDir()
+	})
+	return dirContent, nil
+}
+
 func (s *server) initWith(responseWriter http.ResponseWriter, request *http.Request) error {
 	s.responseWriter = responseWriter
 	s.request = request
@@ -83,7 +98,7 @@ func (s *server) processGet() {
 	if !itemFileInfo.IsDir() {
 		http.ServeFile(s.responseWriter, s.request, s.itemFilePath)
 	} else {
-		dirFiles, _ := ioutil.ReadDir(s.itemFilePath)
+		dirFiles, _ := getSortedDirContent(s.itemFilePath)
 		dirSize := len(dirFiles)
 
 		var offset, count int
@@ -129,15 +144,15 @@ func (s *server) processGet() {
 			}
 		}
 
-		dir := &storeDirContent{
+		content := &storeDirContent{
 			Offset: offset,
 			//Count:  count,
 			Files:  dirFilesInfo,
 		}
 
-		dirJSON, _ := json.MarshalIndent(dir, "", "  ")
+		contentJSON, _ := json.MarshalIndent(content, "", "  ")
 		s.responseWriter.Header().Add("Content-Type", "application/json")
-		s.responseWriter.Write(dirJSON)
+		s.responseWriter.Write(contentJSON)
 	}
 }
 
@@ -150,7 +165,35 @@ func (s *server) processPost() {
 		if reqIsDir := reqOpts[dirCreateOptName]; reqIsDir != nil {
 			if err := os.Mkdir(s.itemFilePath, 0755); err != nil {
 				s.responseWriter.WriteHeader(http.StatusInternalServerError)
+				return
 			}
+			dirPath, dirName := path.Split(s.itemFilePath)
+			dirFiles, _ := getSortedDirContent(dirPath)
+
+			for i:=0; i < len(dirFiles); i++ {
+				fmt.Println(strconv.Itoa(i), ": ", dirFiles[i].Name())
+			}
+
+			offset := sort.Search(len(dirFiles), func(i int) bool {
+				fmt.Println(dirFiles[i].Name(), i, dirName)
+				return strings.ToLower(dirFiles[i].Name()) >= strings.ToLower(dirName)
+			})
+
+			content := &storeDirContent{
+				Offset: offset,
+				//Count:  count,
+				Files:  []*storeItemInfo{
+					&storeItemInfo{
+						Name:        dirFiles[offset].Name(),
+						IsDirectory: dirFiles[offset].IsDir(),
+						ModDate:     dirFiles[offset].ModTime().Unix(),
+						Size:        0,
+					},
+				},
+			}
+			contentJSON, _ := json.MarshalIndent(content, "", "  ")
+			s.responseWriter.Header().Add("Content-Type", "application/json")
+			s.responseWriter.Write(contentJSON)
 		} else {
 			if _, err := os.Stat(s.itemFilePath); err == nil {
 				s.responseWriter.WriteHeader(http.StatusConflict)
