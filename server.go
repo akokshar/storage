@@ -157,31 +157,24 @@ func (s *server) processGet() {
 }
 
 func (s *server) processPost() {
-	/*  TODO:
-		server should respond with storeDirContent{... offset=x, count=1,...}
-		this will enable client to update interface properly without reloading whole directory
-	*/
+
 	if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
 		if reqIsDir := reqOpts[dirCreateOptName]; reqIsDir != nil {
 			if err := os.Mkdir(s.itemFilePath, 0755); err != nil {
 				s.responseWriter.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+			/* server should respond with storeDirContent{offset=x, [1]*storeItemInfo}
+			this enables client to update interface properly without reloading whole directory */
 			dirPath, dirName := path.Split(s.itemFilePath)
 			dirFiles, _ := getSortedDirContent(dirPath)
 
-			for i:=0; i < len(dirFiles); i++ {
-				fmt.Println(strconv.Itoa(i), ": ", dirFiles[i].Name())
-			}
-
 			offset := sort.Search(len(dirFiles), func(i int) bool {
-				fmt.Println(dirFiles[i].Name(), i, dirName)
 				return strings.ToLower(dirFiles[i].Name()) >= strings.ToLower(dirName)
 			})
 
 			content := &storeDirContent{
 				Offset: offset,
-				//Count:  count,
 				Files:  []*storeItemInfo{
 					&storeItemInfo{
 						Name:        dirFiles[offset].Name(),
