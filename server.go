@@ -12,10 +12,10 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
-	"sort"
 )
 
 const defaultBasedir = "/tmp"
@@ -41,7 +41,6 @@ type storeItemInfo struct {
 
 type storeDirContent struct {
 	Offset int              `json:"offset"`
-	//Count  int              `json:"count"`
 	Files  []*storeItemInfo `json:"files"`
 }
 
@@ -57,7 +56,7 @@ func getSortedDirContent(dirPath string) ([]os.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.SliceStable(dirContent, func (i int, j int) bool {
+	sort.SliceStable(dirContent, func(i int, j int) bool {
 		if dirContent[i].IsDir() == dirContent[j].IsDir() {
 			return strings.ToLower(dirContent[i].Name()) < strings.ToLower(dirContent[j].Name())
 		}
@@ -146,7 +145,6 @@ func (s *server) processGet() {
 
 		content := &storeDirContent{
 			Offset: offset,
-			//Count:  count,
 			Files:  dirFilesInfo,
 		}
 
@@ -156,77 +154,95 @@ func (s *server) processGet() {
 	}
 }
 
-func (s *server) processPost() {
+func (s *server) createDir() {
+	err := os.Mkdir(s.itemFilePath, 0755)
+	if err != nil {
+		s.responseWriter.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	pPath, dName := path.Split(s.itemFilePath)
+	pFiles, err := getSortedDirContent(pPath)
+	if err != nil {
+		s.responseWriter.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
-	if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
-		if reqIsDir := reqOpts[dirCreateOptName]; reqIsDir != nil {
-			if err := os.Mkdir(s.itemFilePath, 0755); err != nil {
-				s.responseWriter.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			/* server should respond with storeDirContent{offset=x, [1]*storeItemInfo}
-			this enables client to update interface properly without reloading whole directory */
-			dirPath, dirName := path.Split(s.itemFilePath)
-			dirFiles, _ := getSortedDirContent(dirPath)
-
-			offset := sort.Search(len(dirFiles), func(i int) bool {
-				if dirFiles[i].IsDir() {
-					return strings.ToLower(dirFiles[i].Name()) >= strings.ToLower(dirName)
-				}
-				return true
-			})
-
-			content := &storeDirContent{
-				Offset: offset,
-				Files:  []*storeItemInfo{
-					&storeItemInfo{
-						Name:        dirFiles[offset].Name(),
-						IsDirectory: dirFiles[offset].IsDir(),
-						ModDate:     dirFiles[offset].ModTime().Unix(),
-						Size:        0,
-					},
-				},
-			}
-			contentJSON, _ := json.MarshalIndent(content, "", "  ")
-			s.responseWriter.Header().Add("Content-Type", "application/json")
-			s.responseWriter.Write(contentJSON)
-		} else {
-			if _, err := os.Stat(s.itemFilePath); err == nil {
-				s.responseWriter.WriteHeader(http.StatusConflict)
-				return
-			}
-
-			file, err := os.Create(s.itemFilePath)
-			if err != nil {
-				e, _ := err.(*os.PathError)
-				switch e.Err {
-				case syscall.EACCES:
-					{
-						s.responseWriter.WriteHeader(http.StatusForbidden)
-					}
-				case syscall.ENOENT:
-					{
-						s.responseWriter.WriteHeader(http.StatusNoContent)
-					}
-				default:
-					{
-						s.responseWriter.WriteHeader(http.StatusInternalServerError)
-					}
-				}
-				return
-			}
-			defer file.Close()
-
-			n, err := io.Copy(file, s.request.Body)
-			if err != nil || n != s.request.ContentLength {
-				s.responseWriter.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			s.responseWriter.WriteHeader(http.StatusCreated)
+	sFunc := func(i int) bool {
+		if pFiles[i].IsDir() {
+			return strings.ToLower(pFiles[i].Name()) >= strings.ToLower(dName)
 		}
-	} else {
+		return true
+	}
+	pos := sort.Search(len(pFiles), sFunc)
+	content := &storeDirContent{
+		Offset: pos,
+		Files: []*storeItemInfo{
+			&storeItemInfo{
+				Name:        dName,
+				IsDirectory: true,
+				ModDate:     pFiles[pos].ModTime().Unix(),
+				Size:        0,
+			},
+		},
+	}
+	contentJSON, err := json.Marshal(content)
+	if err != nil {
+		s.responseWriter.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	s.responseWriter.Header().Add("Content-Type", "application/json")
+	s.responseWriter.Write(contentJSON)
+	return
+}
+
+func (s *server) createFile() {
+	f, err := os.Create(s.itemFilePath)
+	if err != nil {
+		e, _ := err.(*os.PathError)
+		switch e.Err {
+		case syscall.EACCES:
+			{
+				s.responseWriter.WriteHeader(http.StatusForbidden)
+			}
+		case syscall.ENOENT:
+			{
+				s.responseWriter.WriteHeader(http.StatusNoContent)
+			}
+		default:
+			{
+				s.responseWriter.WriteHeader(http.StatusInternalServerError)
+			}
+		}
+		return
+	}
+	defer f.Close()
+
+	n, err := io.Copy(f, s.request.Body)
+	if err != nil || n != s.request.ContentLength {
+		s.responseWriter.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	s.responseWriter.WriteHeader(http.StatusCreated)
+}
+
+func (s *server) processPost() {
+	opts, err := url.ParseQuery(s.reqURL.RawQuery)
+	if err != nil {
 		s.responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if _, err := os.Stat(s.itemFilePath); err == nil {
+		s.responseWriter.WriteHeader(http.StatusConflict)
+		return
+	}
+
+	createDir := opts[dirCreateOptName] != nil
+	if createDir {
+		s.createDir()
+	} else {
+		s.createFile()
 	}
 }
 
