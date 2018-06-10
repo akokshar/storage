@@ -28,6 +28,7 @@ const dirListCountOptName = "count"
 const defaultDirListCount = 10
 
 const dirCreateOptName = "directory"
+const getItemInfoOptName = "info"
 
 var basedir string
 var port string
@@ -37,6 +38,9 @@ type storeItemInfo struct {
 	IsDirectory bool   `json:"is_dir"`
 	ModDate     int64  `json:"m_date"`
 	Size        int64  `json:"size"`
+
+    itemPath    string
+    files       []os.FileInfo
 }
 
 type storeDirContent struct {
@@ -65,6 +69,41 @@ func getSortedDirContent(dirPath string) ([]os.FileInfo, error) {
 	return dirContent, nil
 }
 
+func (itemInfo *storeItemInfo) initWithPath(itemPath string) error {
+	fi, err := os.Stat(itemPath)
+	if err != nil {
+		return err
+	}
+
+    itemInfo.Name = fi.Name()
+	itemInfo.IsDirectory = fi.IsDir()
+	itemInfo.ModDate = fi.ModTime().Unix()
+    itemInfo.itemPath = itemPath
+
+	var size int64
+	if fi.IsDir() {
+        files, _ := getSortedDirContent(itemInfo.itemPath)
+		itemInfo.files = files
+		size = int64(len(itemInfo.files))
+	} else {
+        itemInfo.files = nil
+		size = fi.Size()
+	}
+	itemInfo.Size = size
+
+    return nil
+}
+
+func (itemInfo *storeItemInfo) getItemAtIndex(index int) *storeItemInfo {
+    if index >= len(itemInfo.files) || index < 0 {
+        return nil
+    }
+
+    var childItemInfo storeItemInfo
+    childItemInfo.initWithPath(path.Join(itemInfo.itemPath, itemInfo.files[index].Name()))
+    return &childItemInfo
+}
+
 func (s *server) initWith(responseWriter http.ResponseWriter, request *http.Request) error {
 	s.responseWriter = responseWriter
 	s.request = request
@@ -88,70 +127,64 @@ func (s *server) initWith(responseWriter http.ResponseWriter, request *http.Requ
 }
 
 func (s *server) processGet() {
-	itemFileInfo, err := os.Stat(s.itemFilePath)
-
+    opts, err := url.ParseQuery(s.reqURL.RawQuery)
 	if err != nil {
-		s.responseWriter.WriteHeader(http.StatusNotFound)
+		s.responseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if !itemFileInfo.IsDir() {
-		http.ServeFile(s.responseWriter, s.request, s.itemFilePath)
-	} else {
-		dirFiles, _ := getSortedDirContent(s.itemFilePath)
-		dirSize := len(dirFiles)
 
-		var offset, count int
-		if reqOpts, err := url.ParseQuery(s.reqURL.RawQuery); err == nil {
-			if reqOffset := reqOpts[dirListOffsetOptName]; reqOffset != nil {
-				if offset, err = strconv.Atoi(reqOffset[0]); err != nil {
-					offset = defaultDirListOffset
-				}
-			} else {
-				offset = defaultDirListOffset
-			}
+    var itemInfo storeItemInfo
+    if err := itemInfo.initWithPath(s.itemFilePath); err != nil {
+		s.responseWriter.WriteHeader(http.StatusNotFound)
+		return
+    }
 
-			if reqCount := reqOpts[dirListCountOptName]; reqCount != nil {
-				if count, err = strconv.Atoi(reqCount[0]); err != nil {
-					count = defaultDirListCount
-				}
-			} else {
-				count = defaultDirListCount
-			}
-		}
-		if tailLen := dirSize - offset; tailLen < count {
-			count = tailLen
-		}
-
-		dirFilesInfo := make([]*storeItemInfo, count)
-		for i := 0; i < count; i++ {
-			childFilePath := path.Join(s.itemFilePath, dirFiles[i+offset].Name())
-			if childFileInfo, err := os.Stat(childFilePath); err == nil {
-				var childSize int64
-				if childFileInfo.IsDir() {
-					childContent, _ := ioutil.ReadDir(childFilePath)
-					childSize = int64(len(childContent))
-				} else {
-					childSize = childFileInfo.Size()
-				}
-
-				dirFilesInfo[i] = &storeItemInfo{
-					Name:        childFileInfo.Name(),
-					IsDirectory: childFileInfo.IsDir(),
-					ModDate:     childFileInfo.ModTime().Unix(),
-					Size:        childSize,
-				}
-			}
-		}
-
-		content := &storeDirContent{
-			Offset: offset,
-			Files:  dirFilesInfo,
-		}
-
-		contentJSON, _ := json.MarshalIndent(content, "", "  ")
+    if opts[getItemInfoOptName] != nil {
+		itemInfoJSON, _ := json.MarshalIndent(itemInfo, "", "  ")
 		s.responseWriter.Header().Add("Content-Type", "application/json")
-		s.responseWriter.Write(contentJSON)
+		s.responseWriter.Write(itemInfoJSON)
+        return
+    }
+
+	if !itemInfo.IsDirectory {
+		http.ServeFile(s.responseWriter, s.request, itemInfo.itemPath)
+        return
+    }
+
+	var offset int
+    if reqOffset := opts[dirListOffsetOptName]; reqOffset != nil {
+        if offset, err = strconv.Atoi(reqOffset[0]); err != nil {
+            offset = defaultDirListOffset
+        }
+    } else {
+        offset = defaultDirListOffset
+    }
+
+    var count int
+    if reqCount := opts[dirListCountOptName]; reqCount != nil {
+        if count, err = strconv.Atoi(reqCount[0]); err != nil {
+            count = defaultDirListCount
+        }
+    } else {
+        count = defaultDirListCount
 	}
+	if tailLen := len(itemInfo.files) - offset; tailLen < count {
+		count = tailLen
+	}
+
+	dirFilesInfo := make([]*storeItemInfo, count)
+	for i := 0; i < count; i++ {
+        dirFilesInfo[i] = itemInfo.getItemAtIndex(i + offset)
+    }
+
+    content := &storeDirContent{
+		Offset: offset,
+		Files:  dirFilesInfo,
+	}
+
+	contentJSON, _ := json.MarshalIndent(content, "", "  ")
+	s.responseWriter.Header().Add("Content-Type", "application/json")
+	s.responseWriter.Write(contentJSON)
 }
 
 func (s *server) createDir() {
