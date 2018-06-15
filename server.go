@@ -256,7 +256,17 @@ func (s *server) createFile() {
 		return
 	}
 
+    var fileInfo storeItemInfo
+    fileInfo.initWithPath(s.itemFilePath)
+
+	fileInfoJSON, err := json.Marshal(fileInfo)
+	if err != nil {
+		s.responseWriter.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	s.responseWriter.WriteHeader(http.StatusCreated)
+	s.responseWriter.Header().Add("Content-Type", "application/json")
+	s.responseWriter.Write(fileInfoJSON)
 }
 
 func (s *server) processPost() {
