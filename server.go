@@ -250,8 +250,11 @@ func (s *server) createFile() {
 	}
 	defer f.Close()
 
-	n, err := io.Copy(f, s.request.Body)
-	if err != nil || n != s.request.ContentLength {
+	_, err = io.Copy(f, s.request.Body)
+// TODO:
+// ContentLen condition does not work for binary data. to investigate later. 
+//	if err != nil || n != s.request.ContentLength {
+	if err != nil {
 		s.responseWriter.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -264,8 +267,8 @@ func (s *server) createFile() {
 		s.responseWriter.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	s.responseWriter.WriteHeader(http.StatusCreated)
 	s.responseWriter.Header().Add("Content-Type", "application/json")
+	s.responseWriter.WriteHeader(http.StatusCreated)
 	s.responseWriter.Write(fileInfoJSON)
 }
 
