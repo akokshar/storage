@@ -30,12 +30,15 @@ const defaultDirListCount = 10
 const dirCreateOptName = "directory"
 const getItemInfoOptName = "info"
 
+const utiFolder = "public.folder"
+const utiData = "public.data"
+
 var basedir string
 var port string
 
 type storeItemInfo struct {
 	Name        string `json:"name"`
-	IsDirectory bool   `json:"is_dir"`
+	UTI         string `json:"uti"`
 	ModDate     int64  `json:"m_date"`
 	Size        int64  `json:"size"`
 
@@ -76,7 +79,11 @@ func (itemInfo *storeItemInfo) initWithPath(itemPath string) error {
 	}
 
     itemInfo.Name = fi.Name()
-	itemInfo.IsDirectory = fi.IsDir()
+    if fi.IsDir() {
+	    itemInfo.UTI = utiFolder
+    } else {
+        itemInfo.UTI = utiData
+    }
 	itemInfo.ModDate = fi.ModTime().Unix()
     itemInfo.itemPath = itemPath
 
@@ -146,7 +153,7 @@ func (s *server) processGet() {
         return
     }
 
-	if !itemInfo.IsDirectory {
+	if itemInfo.UTI != utiFolder {
 		http.ServeFile(s.responseWriter, s.request, itemInfo.itemPath)
         return
     }
@@ -211,10 +218,10 @@ func (s *server) createDir() {
 		Offset: pos,
 		Files: []*storeItemInfo{
 			&storeItemInfo{
-				Name:        dName,
-				IsDirectory: true,
-				ModDate:     pFiles[pos].ModTime().Unix(),
-				Size:        0,
+				Name:       dName,
+				UTI:        utiFolder,
+				ModDate:    pFiles[pos].ModTime().Unix(),
+				Size:       0,
 			},
 		},
 	}
