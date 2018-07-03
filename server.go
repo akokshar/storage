@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+    "crypto/md5"
 	"errors"
 	"flag"
 	"fmt"
@@ -41,6 +42,7 @@ type storeItemInfo struct {
 	UTI         string `json:"uti"`
 	ModDate     int64  `json:"m_date"`
 	Size        int64  `json:"size"`
+    Check       string `json:"check"`
 
     itemPath    string
     files       []os.FileInfo
@@ -88,15 +90,20 @@ func (itemInfo *storeItemInfo) initWithPath(itemPath string) error {
     itemInfo.itemPath = itemPath
 
 	var size int64
+    h := md5.New()
 	if fi.IsDir() {
         files, _ := getSortedDirContent(itemInfo.itemPath)
 		itemInfo.files = files
 		size = int64(len(itemInfo.files))
+        for i := 0; i < len(files); i++ {
+            io.WriteString(h, files[i].Name())
+        }
 	} else {
         itemInfo.files = nil
 		size = fi.Size()
 	}
 	itemInfo.Size = size
+    itemInfo.Check = fmt.Sprintf("%X", h.Sum(nil))
 
     return nil
 }
@@ -231,6 +238,7 @@ func (s *server) createDir() {
 		return
 	}
 	s.responseWriter.Header().Add("Content-Type", "application/json")
+	s.responseWriter.WriteHeader(http.StatusCreated)
 	s.responseWriter.Write(contentJSON)
 	return
 }
