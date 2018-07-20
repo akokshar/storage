@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-    "crypto/md5"
+//    "crypto/md5"
 	"errors"
 	"flag"
 	"fmt"
@@ -31,18 +31,17 @@ const defaultDirListCount = 10
 const dirCreateOptName = "directory"
 const getItemInfoOptName = "info"
 
-const utiFolder = "public.folder"
-const utiData = "public.data"
+const contentTypeDirectory = "folder"
 
 var basedir string
 var port string
 
 type storeItemInfo struct {
 	Name        string `json:"name"`
-	UTI         string `json:"uti"`
+	ContentType string `json:"c_type"`
 	ModDate     int64  `json:"m_date"`
 	Size        int64  `json:"size"`
-    Check       string `json:"check"`
+    //Check       string `json:"check"`
 
     itemPath    string
     files       []os.FileInfo
@@ -81,29 +80,39 @@ func (itemInfo *storeItemInfo) initWithPath(itemPath string) error {
 	}
 
     itemInfo.Name = fi.Name()
-    if fi.IsDir() {
-	    itemInfo.UTI = utiFolder
-    } else {
-        itemInfo.UTI = utiData
-    }
 	itemInfo.ModDate = fi.ModTime().Unix()
     itemInfo.itemPath = itemPath
 
 	var size int64
-    h := md5.New()
+    //h := md5.New()
 	if fi.IsDir() {
         files, _ := getSortedDirContent(itemInfo.itemPath)
 		itemInfo.files = files
 		size = int64(len(itemInfo.files))
-        for i := 0; i < len(files); i++ {
-            io.WriteString(h, files[i].Name())
-        }
+        //for i := 0; i < len(files); i++ {
+        //    io.WriteString(h, files[i].Name())
+        //}
+        itemInfo.ContentType = contentTypeDirectory
 	} else {
         itemInfo.files = nil
 		size = fi.Size()
+
+        f, err := os.Open(itemPath)
+        if err != nil {
+            return err
+        }
+        defer f.Close()
+
+        buffer := make([]byte, 512)
+        _, err = f.Read(buffer)
+        if err != nil {
+        return err
+        }
+
+        itemInfo.ContentType = http.DetectContentType(buffer)
 	}
 	itemInfo.Size = size
-    itemInfo.Check = fmt.Sprintf("%X", h.Sum(nil))
+    //itemInfo.Check = fmt.Sprintf("%X", h.Sum(nil))
 
     return nil
 }
@@ -160,7 +169,7 @@ func (s *server) processGet() {
         return
     }
 
-	if itemInfo.UTI != utiFolder {
+	if itemInfo.files == nil {
 		http.ServeFile(s.responseWriter, s.request, itemInfo.itemPath)
         return
     }
@@ -226,7 +235,7 @@ func (s *server) createDir() {
 		Files: []*storeItemInfo{
 			&storeItemInfo{
 				Name:       dName,
-				UTI:        utiFolder,
+				ContentType: "directory",
 				ModDate:    pFiles[pos].ModTime().Unix(),
 				Size:       0,
 			},
