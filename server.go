@@ -40,6 +40,7 @@ type storeItemInfo struct {
 	Name        string `json:"name"`
 	ContentType string `json:"c_type"`
 	ModDate     int64  `json:"m_date"`
+    CrtDate     int64  `json:"c_date"`
 	Size        int64  `json:"size"`
     //Check       string `json:"check"`
 
@@ -80,7 +81,10 @@ func (itemInfo *storeItemInfo) initWithPath(itemPath string) error {
 	}
 
     itemInfo.Name = fi.Name()
-	itemInfo.ModDate = fi.ModTime().Unix()
+
+    itemInfo.CrtDate = int64(fi.Sys().(*syscall.Stat_t).Ctim.Nsec)
+    itemInfo.ModDate = int64(fi.Sys().(*syscall.Stat_t).Mtim.Nsec)
+//	itemInfo.ModDate = fi.ModTime().Unix()
     itemInfo.itemPath = itemPath
 
 	var size int64
@@ -106,7 +110,7 @@ func (itemInfo *storeItemInfo) initWithPath(itemPath string) error {
         buffer := make([]byte, 512)
         _, err = f.Read(buffer)
         if err != nil {
-        return err
+            return err
         }
 
         itemInfo.ContentType = http.DetectContentType(buffer)
@@ -213,35 +217,20 @@ func (s *server) processGet() {
 func (s *server) createDir() {
 	err := os.Mkdir(s.itemFilePath, 0755)
 	if err != nil {
-		s.responseWriter.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	pPath, dName := path.Split(s.itemFilePath)
-	pFiles, err := getSortedDirContent(pPath)
-	if err != nil {
-		s.responseWriter.WriteHeader(http.StatusInternalServerError)
-		return
+		e, _ := err.(*os.PathError)
+        	if e.Err != syscall.EEXIST {
+		    s.responseWriter.WriteHeader(http.StatusInternalServerError)
+		    return
+        	}
 	}
 
-	sFunc := func(i int) bool {
-		if pFiles[i].IsDir() {
-			return strings.ToLower(pFiles[i].Name()) >= strings.ToLower(dName)
-		}
-		return true
-	}
-	pos := sort.Search(len(pFiles), sFunc)
-	content := &storeDirContent{
-		Offset: pos,
-		Files: []*storeItemInfo{
-			&storeItemInfo{
-				Name:       dName,
-				ContentType: "directory",
-				ModDate:    pFiles[pos].ModTime().Unix(),
-				Size:       0,
-			},
-		},
-	}
-	contentJSON, err := json.Marshal(content)
+    var itemInfo storeItemInfo
+    if err := itemInfo.initWithPath(s.itemFilePath); err != nil {
+		s.responseWriter.WriteHeader(http.StatusNotFound)
+		return
+    }
+
+	contentJSON, err := json.Marshal(itemInfo)
 	if err != nil {
 		s.responseWriter.WriteHeader(http.StatusInternalServerError)
 		return
