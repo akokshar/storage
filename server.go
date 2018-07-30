@@ -40,12 +40,12 @@ type storeItemInfo struct {
 	Name        string `json:"name"`
 	ContentType string `json:"c_type"`
 	ModDate     int64  `json:"m_date"`
-    CrtDate     int64  `json:"c_date"`
+	CrtDate     int64  `json:"c_date"`
 	Size        int64  `json:"size"`
-    //Check       string `json:"check"`
+	//Check       string `json:"check"`
 
-    itemPath    string
-    files       []os.FileInfo
+	itemPath    string
+	files       []os.FileInfo
 }
 
 type storeDirContent struct {
@@ -218,10 +218,10 @@ func (s *server) createDir() {
 	err := os.Mkdir(s.itemFilePath, 0755)
 	if err != nil {
 		e, _ := err.(*os.PathError)
-        	if e.Err != syscall.EEXIST {
+		if e.Err != syscall.EEXIST {
 		    s.responseWriter.WriteHeader(http.StatusInternalServerError)
 		    return
-        	}
+		}
 	}
 
     var itemInfo storeItemInfo
