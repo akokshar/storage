@@ -15,8 +15,8 @@ func getModDates(path string) (int64, int64, error) {
 
 	sysStat := fs.Sys().(*syscall.Stat_t)
 
-	cDate := sysStat.Ctim.Nsec
-	mDate := sysStat.Mtim.Nsec
+	cDate := sysStat.Ctim.Sec
+	mDate := sysStat.Mtim.Sec
 
 	return cDate, mDate, nil
 }
