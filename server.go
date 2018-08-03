@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-//    "crypto/md5"
+	//    "crypto/md5"
 	"errors"
 	"flag"
 	"fmt"
@@ -44,8 +44,8 @@ type storeItemInfo struct {
 	Size        int64  `json:"size"`
 	//Check       string `json:"check"`
 
-	itemPath    string
-	files       []os.FileInfo
+	itemPath string
+	files    []os.FileInfo
 }
 
 type storeDirContent struct {
@@ -80,55 +80,56 @@ func (itemInfo *storeItemInfo) initWithPath(itemPath string) error {
 		return err
 	}
 
-    itemInfo.Name = fi.Name()
+	itemInfo.Name = fi.Name()
 
-    itemInfo.CrtDate = int64(fi.Sys().(*syscall.Stat_t).Ctim.Nsec)
-    itemInfo.ModDate = int64(fi.Sys().(*syscall.Stat_t).Mtim.Nsec)
-//	itemInfo.ModDate = fi.ModTime().Unix()
-    itemInfo.itemPath = itemPath
+	itemInfo.CrtDate, itemInfo.ModDate, err = getModDates(itemPath)
+	if err != nil {
+		return err
+	}
+	itemInfo.itemPath = itemPath
 
 	var size int64
-    //h := md5.New()
+	//h := md5.New()
 	if fi.IsDir() {
-        files, _ := getSortedDirContent(itemInfo.itemPath)
+		files, _ := getSortedDirContent(itemInfo.itemPath)
 		itemInfo.files = files
 		size = int64(len(itemInfo.files))
-        //for i := 0; i < len(files); i++ {
-        //    io.WriteString(h, files[i].Name())
-        //}
-        itemInfo.ContentType = contentTypeDirectory
+		//for i := 0; i < len(files); i++ {
+		//    io.WriteString(h, files[i].Name())
+		//}
+		itemInfo.ContentType = contentTypeDirectory
 	} else {
-        itemInfo.files = nil
+		itemInfo.files = nil
 		size = fi.Size()
 
-        f, err := os.Open(itemPath)
-        if err != nil {
-            return err
-        }
-        defer f.Close()
+		f, err := os.Open(itemPath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
 
-        buffer := make([]byte, 512)
-        _, err = f.Read(buffer)
-        if err != nil {
-            return err
-        }
+		buffer := make([]byte, 512)
+		_, err = f.Read(buffer)
+		if err != nil {
+			return err
+		}
 
-        itemInfo.ContentType = http.DetectContentType(buffer)
+		itemInfo.ContentType = http.DetectContentType(buffer)
 	}
 	itemInfo.Size = size
-    //itemInfo.Check = fmt.Sprintf("%X", h.Sum(nil))
+	//itemInfo.Check = fmt.Sprintf("%X", h.Sum(nil))
 
-    return nil
+	return nil
 }
 
 func (itemInfo *storeItemInfo) getItemAtIndex(index int) *storeItemInfo {
-    if index >= len(itemInfo.files) || index < 0 {
-        return nil
-    }
+	if index >= len(itemInfo.files) || index < 0 {
+		return nil
+	}
 
-    var childItemInfo storeItemInfo
-    childItemInfo.initWithPath(path.Join(itemInfo.itemPath, itemInfo.files[index].Name()))
-    return &childItemInfo
+	var childItemInfo storeItemInfo
+	childItemInfo.initWithPath(path.Join(itemInfo.itemPath, itemInfo.files[index].Name()))
+	return &childItemInfo
 }
 
 func (s *server) initWith(responseWriter http.ResponseWriter, request *http.Request) error {
@@ -154,46 +155,46 @@ func (s *server) initWith(responseWriter http.ResponseWriter, request *http.Requ
 }
 
 func (s *server) processGet() {
-    opts, err := url.ParseQuery(s.reqURL.RawQuery)
+	opts, err := url.ParseQuery(s.reqURL.RawQuery)
 	if err != nil {
 		s.responseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-    var itemInfo storeItemInfo
-    if err := itemInfo.initWithPath(s.itemFilePath); err != nil {
+	var itemInfo storeItemInfo
+	if err := itemInfo.initWithPath(s.itemFilePath); err != nil {
 		s.responseWriter.WriteHeader(http.StatusNotFound)
 		return
-    }
+	}
 
-    if opts[getItemInfoOptName] != nil {
+	if opts[getItemInfoOptName] != nil {
 		itemInfoJSON, _ := json.MarshalIndent(itemInfo, "", "  ")
 		s.responseWriter.Header().Add("Content-Type", "application/json")
 		s.responseWriter.Write(itemInfoJSON)
-        return
-    }
+		return
+	}
 
 	if itemInfo.files == nil {
 		http.ServeFile(s.responseWriter, s.request, itemInfo.itemPath)
-        return
-    }
+		return
+	}
 
 	var offset int
-    if reqOffset := opts[dirListOffsetOptName]; reqOffset != nil {
-        if offset, err = strconv.Atoi(reqOffset[0]); err != nil {
-            offset = defaultDirListOffset
-        }
-    } else {
-        offset = defaultDirListOffset
-    }
+	if reqOffset := opts[dirListOffsetOptName]; reqOffset != nil {
+		if offset, err = strconv.Atoi(reqOffset[0]); err != nil {
+			offset = defaultDirListOffset
+		}
+	} else {
+		offset = defaultDirListOffset
+	}
 
-    var count int
-    if reqCount := opts[dirListCountOptName]; reqCount != nil {
-        if count, err = strconv.Atoi(reqCount[0]); err != nil {
-            count = defaultDirListCount
-        }
-    } else {
-        count = defaultDirListCount
+	var count int
+	if reqCount := opts[dirListCountOptName]; reqCount != nil {
+		if count, err = strconv.Atoi(reqCount[0]); err != nil {
+			count = defaultDirListCount
+		}
+	} else {
+		count = defaultDirListCount
 	}
 	if tailLen := len(itemInfo.files) - offset; tailLen < count {
 		count = tailLen
@@ -201,10 +202,10 @@ func (s *server) processGet() {
 
 	dirFilesInfo := make([]*storeItemInfo, count)
 	for i := 0; i < count; i++ {
-        dirFilesInfo[i] = itemInfo.getItemAtIndex(i + offset)
-    }
+		dirFilesInfo[i] = itemInfo.getItemAtIndex(i + offset)
+	}
 
-    content := &storeDirContent{
+	content := &storeDirContent{
 		Offset: offset,
 		Files:  dirFilesInfo,
 	}
@@ -219,16 +220,16 @@ func (s *server) createDir() {
 	if err != nil {
 		e, _ := err.(*os.PathError)
 		if e.Err != syscall.EEXIST {
-		    s.responseWriter.WriteHeader(http.StatusInternalServerError)
-		    return
+			s.responseWriter.WriteHeader(http.StatusInternalServerError)
+			return
 		}
 	}
 
-    var itemInfo storeItemInfo
-    if err := itemInfo.initWithPath(s.itemFilePath); err != nil {
+	var itemInfo storeItemInfo
+	if err := itemInfo.initWithPath(s.itemFilePath); err != nil {
 		s.responseWriter.WriteHeader(http.StatusNotFound)
 		return
-    }
+	}
 
 	contentJSON, err := json.Marshal(itemInfo)
 	if err != nil {
@@ -264,16 +265,16 @@ func (s *server) createFile() {
 	defer f.Close()
 
 	_, err = io.Copy(f, s.request.Body)
-// TODO:
-// ContentLen condition does not work for binary data. to investigate later. 
-//	if err != nil || n != s.request.ContentLength {
+	// TODO:
+	// ContentLen condition does not work for binary data. to investigate later.
+	//	if err != nil || n != s.request.ContentLength {
 	if err != nil {
 		s.responseWriter.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-    var fileInfo storeItemInfo
-    fileInfo.initWithPath(s.itemFilePath)
+	var fileInfo storeItemInfo
+	fileInfo.initWithPath(s.itemFilePath)
 
 	fileInfoJSON, err := json.Marshal(fileInfo)
 	if err != nil {
@@ -338,6 +339,20 @@ func main() {
 	flag.StringVar(&port, "port", defaultPort, "Listen port")
 	flag.Parse()
 
+	envBasedir := os.Getenv("STORAGE_BASEDIR")
+	envPort := os.Getenv("STORAGE_PORT")
+
+	if len(envBasedir) != 0 {
+		basedir = envBasedir
+	}
+
+	if len(envPort) != 0 {
+		port = envPort
+	}
+
+	// Create `basedir` if not exists
+	os.MkdirAll(basedir, os.ModePerm)
+
 	http.HandleFunc("/", func(responseWriter http.ResponseWriter, request *http.Request) {
 		var s server
 		if err := s.initWith(responseWriter, request); err == nil {
@@ -345,5 +360,6 @@ func main() {
 		}
 	})
 
+	log.Printf("Storage is about to serve `%s` on port `%s`\n", basedir, port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
 }
