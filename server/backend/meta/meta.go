@@ -90,10 +90,10 @@ func newFileMeta(fPath string) (*fileMeta, backend.HandlerError) {
 		fMeta.Size = fi.Size()
 	}
 	sysStat := fi.Sys().(*syscall.Stat_t)
-	//fMeta.MDate = sysStat.Mtim.Sec
-	//fMeta.CDate = sysStat.Ctim.Sec
-	fMeta.MDate = sysStat.Mtimespec.Sec
-	fMeta.CDate = sysStat.Ctimespec.Sec
+	fMeta.MDate = sysStat.Mtim.Sec
+	fMeta.CDate = sysStat.Ctim.Sec
+	//fMeta.MDate = sysStat.Mtimespec.Sec
+	//fMeta.CDate = sysStat.Ctimespec.Sec
 
 	return fMeta, nil
 }
