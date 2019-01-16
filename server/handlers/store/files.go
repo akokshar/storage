@@ -6,22 +6,28 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/akokshar/storage/server/backend"
+	"github.com/akokshar/storage/server/handlers"
 )
 
 type store struct {
-	prefix string
+	routePrefix string
+	basedir     string
 }
 
 // New initializes backend to server files
-func New() backend.Handler {
+func New(prefix string, basedir string) handlers.Handler {
 	return &store{
-		prefix: "/store/",
+		routePrefix: prefix,
+		basedir:     basedir,
 	}
 }
 
 func (s *store) GetRoutePrefix() string {
-	return s.prefix
+	return s.routePrefix
+}
+
+func (s *store) GetBaseDir() string {
+	return s.basedir
 }
 
 func (s *store) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {

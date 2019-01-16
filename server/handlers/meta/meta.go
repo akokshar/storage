@@ -11,9 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
-	"github.com/akokshar/storage/server/backend"
+	"github.com/akokshar/storage/server/handlers"
 )
 
 const (
@@ -26,7 +25,8 @@ const (
 )
 
 type meta struct {
-	prefix string
+	routePrefix string
+	basedir     string
 }
 
 type fileMeta struct {
@@ -57,11 +57,11 @@ func getDirContent(dir string) ([]os.FileInfo, error) {
 	return filtered, nil
 }
 
-func newFileMeta(fPath string) (*fileMeta, backend.HandlerError) {
+func newFileMeta(fPath string) (*fileMeta, handlers.HandlerError) {
 	fi, err := os.Stat(fPath)
 	if err != nil {
 		log.Printf("Stat '%s' failed with '%s'", fPath, err.Error())
-		return nil, backend.NewHandlerErrorWithCode(http.StatusNotFound)
+		return nil, handlers.NewHandlerErrorWithCode(http.StatusNotFound)
 	}
 
 	fMeta := new(fileMeta)
@@ -71,52 +71,49 @@ func newFileMeta(fPath string) (*fileMeta, backend.HandlerError) {
 		dirContent, err := getDirContent(fPath)
 		if err != nil {
 			log.Printf("Failed to read directory '%s' due to '%s'", fPath, err.Error())
-			return nil, backend.NewHandlerErrorWithCode(http.StatusInternalServerError)
+			return nil, handlers.NewHandlerErrorWithCode(http.StatusInternalServerError)
 		}
 		fMeta.Size = int64(len(dirContent))
 	} else {
 		f, err := os.Open(fPath)
 		if err != nil {
 			log.Printf("Failed to open '%s' to determine its content type due to '%s'", fPath, err.Error())
-			return nil, backend.NewHandlerErrorWithCode(http.StatusInternalServerError)
+			return nil, handlers.NewHandlerErrorWithCode(http.StatusInternalServerError)
 		}
 		defer f.Close()
 		buffer := make([]byte, 512)
 		_, err = f.Read(buffer)
 		if err != nil {
 			log.Printf("Read from '%s' failed due to '%s'", fPath, err.Error())
-			return nil, backend.NewHandlerErrorWithCode(http.StatusInternalServerError)
+			return nil, handlers.NewHandlerErrorWithCode(http.StatusInternalServerError)
 		}
 		fMeta.Size = fi.Size()
 	}
-	sysStat := fi.Sys().(*syscall.Stat_t)
-	fMeta.MDate = sysStat.Mtim.Sec
-	fMeta.CDate = sysStat.Ctim.Sec
-	//fMeta.MDate = sysStat.Mtimespec.Sec
-	//fMeta.CDate = sysStat.Ctimespec.Sec
+
+	fMeta.CDate, fMeta.MDate = getFileTimeStamps(fi)
 
 	return fMeta, nil
 }
 
-func newDirMeta(dPath string, offset int, count int) (*dirMeta, backend.HandlerError) {
+func newDirMeta(dPath string, offset int, count int) (*dirMeta, handlers.HandlerError) {
 	fi, err := os.Stat(dPath)
 	if err != nil {
 		log.Printf("Stat '%s' failed with '%s'", dPath, err.Error())
-		return nil, backend.NewHandlerErrorWithCode(http.StatusNotFound)
+		return nil, handlers.NewHandlerErrorWithCode(http.StatusNotFound)
 	}
 
 	if !fi.IsDir() {
-		return nil, backend.NewHandlerErrorWithCode(http.StatusNoContent)
+		return nil, handlers.NewHandlerErrorWithCode(http.StatusNoContent)
 	}
 
 	dirContent, err := getDirContent(dPath)
 	if err != nil {
-		return nil, backend.NewHandlerErrorWithCode(http.StatusInternalServerError)
+		return nil, handlers.NewHandlerErrorWithCode(http.StatusInternalServerError)
 	}
 
 	if offset > len(dirContent) {
 		log.Printf("Out of range enumeration of '%s'", dPath)
-		return nil, backend.NewHandlerErrorWithCode(http.StatusNoContent)
+		return nil, handlers.NewHandlerErrorWithCode(http.StatusNoContent)
 	}
 
 	if tailLen := len(dirContent) - offset; tailLen < count {
@@ -141,14 +138,19 @@ func newDirMeta(dPath string, offset int, count int) (*dirMeta, backend.HandlerE
 }
 
 // New initializes backend to serve metadata
-func New() backend.Handler {
+func New(prefix string, basedir string) handlers.Handler {
 	return &meta{
-		prefix: "/meta/",
+		routePrefix: prefix,
+		basedir:     basedir,
 	}
 }
 
 func (m *meta) GetRoutePrefix() string {
-	return m.prefix
+	return m.routePrefix
+}
+
+func (m *meta) GetBaseDir() string {
+	return m.basedir
 }
 
 func (m *meta) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +168,7 @@ func (m *meta) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {
 	localFilepath := r.Header.Get("X-Local-Filepath")
 
 	var metaData interface{}
-	var e backend.HandlerError
+	var e handlers.HandlerError
 
 	if opts.Get(enumerateOptName) == "" {
 		metaData, e = newFileMeta(localFilepath)

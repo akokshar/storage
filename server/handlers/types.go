@@ -1,4 +1,4 @@
-package backend
+package handlers
 
 import "net/http"
 
@@ -6,4 +6,5 @@ import "net/http"
 type Handler interface {
 	ServeHTTPRequest(w http.ResponseWriter, r *http.Request)
 	GetRoutePrefix() string
+	GetBaseDir() string
 }

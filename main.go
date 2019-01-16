@@ -13,9 +13,9 @@ import (
 
 const (
 	paramBasedirName = "basedir"
-	defaultBasedir   = "/Store"
+	defaultBasedir   = "/tmp/Store"
 	paramPortName    = "port"
-	defaultPort      = "8082"
+	defaultPort      = "8083"
 )
 
 func main() {
