@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,11 +32,11 @@ type meta struct {
 }
 
 type fileMeta struct {
-	Name  string `json:"name"`
-	CType string `json:"c_type"`
-	Size  int64  `json:"size"`
-	MDate int64  `json:"m_date"`
-	CDate int64  `json:"c_date"`
+	Name  string `json:"nn"`
+	CType string `json:"ct"`
+	Size  int64  `json:"sz"`
+	MDate int64  `json:"md"`
+	CDate int64  `json:"cd"`
 }
 
 type dirMeta struct {
@@ -75,6 +77,7 @@ func newFileMeta(fPath string) (*fileMeta, handlers.HandlerError) {
 		}
 		fMeta.Size = int64(len(dirContent))
 	} else {
+		fMeta.CType = "application/octet-stream"
 		f, err := os.Open(fPath)
 		if err != nil {
 			log.Printf("Failed to open '%s' to determine its content type due to '%s'", fPath, err.Error())
@@ -82,10 +85,12 @@ func newFileMeta(fPath string) (*fileMeta, handlers.HandlerError) {
 		}
 		defer f.Close()
 		buffer := make([]byte, 512)
-		_, err = f.Read(buffer)
-		if err != nil {
-			log.Printf("Read from '%s' failed due to '%s'", fPath, err.Error())
-			return nil, handlers.NewHandlerErrorWithCode(http.StatusInternalServerError)
+		if count, _ := f.Read(buffer); count < 512 {
+			if cType := mime.TypeByExtension(filepath.Ext(fi.Name())); cType != "" {
+				fMeta.CType = cType
+			}
+		} else {
+			fMeta.CType = http.DetectContentType(buffer)
 		}
 		fMeta.Size = fi.Size()
 	}
@@ -129,10 +134,13 @@ func newDirMeta(dPath string, offset int, count int) (*dirMeta, handlers.Handler
 
 	dMeta := new(dirMeta)
 	dMeta.Offset = offset
-	dMeta.Files = make([]*fileMeta, count)
+	dMeta.Files = make([]*fileMeta, 0, count)
 	for i := 0; i < count; i++ {
 		fPath := path.Join(dPath, dirContent[i].Name())
-		dMeta.Files[i], _ = newFileMeta(fPath)
+		fMeta, err := newFileMeta(fPath)
+		if err == nil {
+			dMeta.Files = append(dMeta.Files, fMeta)
+		}
 	}
 	return dMeta, nil
 }
@@ -188,7 +196,7 @@ func (m *meta) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metaJSON, _ := json.MarshalIndent(metaData, "", "  ")
+	metaJSON, _ := json.Marshal(metaData) // Indent(metaData, "", "  ")
 	w.Header().Add("Content-Type", "application/json")
 	w.Write(metaJSON)
 }
