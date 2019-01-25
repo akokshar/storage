@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/akokshar/storage/server/handlers"
+	"github.com/akokshar/storage/server/modules"
 )
 
 type store struct {
@@ -15,7 +15,7 @@ type store struct {
 }
 
 // New initializes backend to server files
-func New(prefix string, basedir string) handlers.Handler {
+func New(prefix string, basedir string) modules.HTTPHandler {
 	return &store{
 		routePrefix: prefix,
 		basedir:     basedir,

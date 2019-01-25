@@ -8,14 +8,16 @@ import (
 	"path"
 	"strings"
 
-	"github.com/akokshar/storage/server/handlers"
-	"github.com/akokshar/storage/server/handlers/meta"
-	"github.com/akokshar/storage/server/handlers/photos"
-	"github.com/akokshar/storage/server/handlers/store"
+	"github.com/akokshar/storage/server/modules"
+	"github.com/akokshar/storage/server/modules/filesdb"
+	"github.com/akokshar/storage/server/modules/meta"
+	"github.com/akokshar/storage/server/modules/photos"
+	"github.com/akokshar/storage/server/modules/store"
 )
 
 type application struct {
-	handlers []handlers.Handler
+	handlers []modules.HTTPHandler
+	filesDB  modules.FilesDB
 }
 
 func (app *application) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +39,7 @@ func (app *application) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusForbidden)
 }
 
-func (app *application) registerHandler(h handlers.Handler) {
+func (app *application) registerHandler(h modules.HTTPHandler) {
 	dir, err := os.Stat(h.GetBaseDir())
 
 	switch {
@@ -63,10 +65,11 @@ func (app *application) registerHandler(h handlers.Handler) {
 // CreateApplication initializes new storage server application
 func CreateApplication(basedir string) http.Handler {
 	app := &application{
-		handlers: make([]handlers.Handler, 0, 3),
+		handlers: make([]modules.HTTPHandler, 0, 3),
+		filesDB:  filesdb.NewFilesDB(path.Join(basedir, ".meta.db")),
 	}
 
-	app.registerHandler(meta.New("/meta", basedir))
+	app.registerHandler(meta.New(app.filesDB, "/meta", basedir))
 	app.registerHandler(store.New("/store", path.Join(basedir, "store")))
 	app.registerHandler(photos.New("/photos", path.Join(basedir, "photos")))
 

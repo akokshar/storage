@@ -1,6 +1,6 @@
-// +build linux
+// +build darwin
 
-package meta
+package filesdb
 
 import (
 	"os"
@@ -10,8 +10,8 @@ import (
 func getFileTimeStamps(fi os.FileInfo) (int64, int64) {
 	sysStat := fi.Sys().(*syscall.Stat_t)
 
-	cDate := sysStat.Ctim.Sec
-	mDate := sysStat.Mtim.Sec
+	cDate := sysStat.Ctimespec.Sec
+	mDate := sysStat.Mtimespec.Sec
 
 	return cDate, mDate
 }
