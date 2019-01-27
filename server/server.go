@@ -70,7 +70,7 @@ func CreateApplication(basedir string) http.Handler {
 	}
 
 	app.registerHandler(meta.New(app.filesDB, "/meta", basedir))
-	app.registerHandler(store.New("/store", path.Join(basedir, "store")))
+	app.registerHandler(store.New(app.filesDB, "/store", path.Join(basedir, "store")))
 	app.registerHandler(photos.New("/photos", path.Join(basedir, "photos")))
 
 	return app

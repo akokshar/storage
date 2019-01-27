@@ -70,7 +70,19 @@ func (m *meta) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	metaData = m.filesDB.GetMetaDataForItemWithID(int64(id))
+	if opts.Get("enumerate") != "" {
+		var offset, count int
+		if offset, err = strconv.Atoi(opts.Get(offsetOptName)); err != nil {
+			offset = offsetDefaultValue
+		}
+		if count, err = strconv.Atoi(opts.Get(countOptName)); err != nil {
+			count = countDefaultValue
+		}
+		metaData = m.filesDB.GetMetaDataForChildrenOfID(id, offset, count)
+	} else {
+		metaData = m.filesDB.GetMetaDataForItemWithID(int64(id))
+	}
+
 	metaJSON, _ := json.MarshalIndent(metaData, "", "  ")
 	w.Header().Add("Content-Type", "application/json")
 	w.Write(metaJSON)

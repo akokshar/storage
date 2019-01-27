@@ -12,13 +12,17 @@ import (
 type store struct {
 	routePrefix string
 	basedir     string
+	filesDB     modules.FilesDB
+	rootID      int64
 }
 
 // New initializes backend to server files
-func New(prefix string, basedir string) modules.HTTPHandler {
+func New(db modules.FilesDB, prefix string, basedir string) modules.HTTPHandler {
 	return &store{
 		routePrefix: prefix,
 		basedir:     basedir,
+		filesDB:     db,
+		rootID:      db.ScanPath(basedir),
 	}
 }
 

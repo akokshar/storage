@@ -161,20 +161,25 @@ func (m *filesDB) ScanPath(p string) int64 {
 			}
 
 			for _, item := range list {
-				var err error
-				if child, err := createFileItem(path.Join(f.path, item.Name())); err == nil {
-					if childID, err := updateOrCreateItem(parentID, child.fileMeta()); err == nil {
+				cPath = path.Join(f.path, item.Name())
+				child, err := createFileItem(cPath)
+				if err != nil {
+					log.Printf("Skipping '%s': %v", cPath, err)
+				} else {
+					childID, err := updateOrCreateItem(parentID, child.fileMeta())
+					if err != nil {
+						log.Printf("Error at '%s': %v", cPath, err)
+					} else {
 						walkFileItem(child, childID)
-						continue
 					}
 				}
-				log.Printf("Error at '%s': %v", path.Join(f.path, item.Name()), err)
+
 			}
 		}
 	}
 	walkFileItem(f, parentID)
 
-	// Clean orphaned items
+	// Clean orphaned items (cascade deletion)
 	log.Printf("Cleaning orphans ... ")
 	_, err = tx.Exec(`DELETE FROM files WHERE parent_id=$1 and scan_time<$2`, parentID, m.startTime)
 	if err != nil {
@@ -226,11 +231,12 @@ func (m *filesDB) GetMetaDataForItemWithID(id int64) interface{} {
 	row := m.database.QueryRow(`
 		SELECT 	id, 
 				CASE ctype 
-					WHEN $1 THEN (SELECT count(*) FROM files WHERE parent_id=$2)
+					WHEN $1 THEN (SELECT count(*) FROM files AS f_size WHERE f_size.parent_id=files.id)
 					ELSE size
 				END item_size, 
 				mdate, cdate, name, ctype 
-		FROM files WHERE id=$2`, contentTypeDirectory, id)
+		FROM files WHERE id=$2`,
+		contentTypeDirectory, id)
 	if err := row.Scan(&fm.ID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
 		return nil
 	}
@@ -238,6 +244,31 @@ func (m *filesDB) GetMetaDataForItemWithID(id int64) interface{} {
 	return fm
 }
 
-func (m *filesDB) GetMetaDataForChildrenOfID(id int64, offset int, count int) []interface{} {
-	return nil
+func (m *filesDB) GetMetaDataForChildrenOfID(id int64, offset int, count int) interface{} {
+	rows, err := m.database.Query(`
+		SELECT 	id, 
+				CASE ctype 
+					WHEN $1 THEN (SELECT count(*) FROM files AS f_size WHERE f_size.parent_id=files.id)
+					ELSE size
+				END item_size, 
+				mdate, cdate, name, ctype 
+		FROM files WHERE parent_id=$2
+		ORDER BY ctype ASC, name ASC
+		LIMIT $3 OFFSET $4`,
+		contentTypeDirectory, id, count, offset)
+
+	if err != nil {
+		return nil
+	}
+
+	fsm := new(dirMeta)
+	for rows.Next() {
+		fm := new(fileMeta)
+		if err := rows.Scan(&fm.ID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
+			return nil
+		}
+		fsm.Files = append(fsm.Files, fm)
+	}
+	fsm.Offset = offset
+	return fsm
 }

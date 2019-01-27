@@ -15,5 +15,5 @@ type FilesDB interface {
 	GetPathForID(int64) (string, error)
 	GetIDForPath(string) (int64, error)
 	GetMetaDataForItemWithID(int64) interface{}
-	GetMetaDataForChildrenOfID(int64, int, int) []interface{}
+	GetMetaDataForChildrenOfID(id int64, offset int, count int) interface{}
 }

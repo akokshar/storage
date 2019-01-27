@@ -41,7 +41,7 @@ func createFileItem(path string) (*fileItem, error) {
 		return nil, err
 	}
 
-	if (!fi.Mode().IsDir() && !fi.Mode().IsRegular()) || strings.HasPrefix(".", fi.Name()) {
+	if (!fi.Mode().IsDir() && !fi.Mode().IsRegular()) || strings.HasPrefix(fi.Name(), ".") {
 		return nil, errors.New("Not a directory, regular file or is hidden")
 	}
 
