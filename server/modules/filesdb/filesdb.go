@@ -229,7 +229,7 @@ func (m *filesDB) GetMetaDataForItemWithID(id int64) interface{} {
 	fm := new(fileMeta)
 
 	row := m.database.QueryRow(`
-		SELECT 	id, 
+		SELECT 	id, parent_id,
 				CASE ctype 
 					WHEN $1 THEN (SELECT count(*) FROM files AS f_size WHERE f_size.parent_id=files.id)
 					ELSE size
@@ -237,14 +237,14 @@ func (m *filesDB) GetMetaDataForItemWithID(id int64) interface{} {
 				mdate, cdate, name, ctype 
 		FROM files WHERE id=$2`,
 		contentTypeDirectory, id)
-	if err := row.Scan(&fm.ID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
+	if err := row.Scan(&fm.ID, &fm.PID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
 		return nil
 	}
 
 	return fm
 }
 
-func (m *filesDB) GetMetaDataForChildrenOfID(id int64, offset int, count int) interface{} {
+func (m *filesDB) GetMetaDataForChildrenOfID(parentID int64, offset int, count int) interface{} {
 	rows, err := m.database.Query(`
 		SELECT 	id, 
 				CASE ctype 
@@ -255,7 +255,7 @@ func (m *filesDB) GetMetaDataForChildrenOfID(id int64, offset int, count int) in
 		FROM files WHERE parent_id=$2
 		ORDER BY ctype ASC, name ASC
 		LIMIT $3 OFFSET $4`,
-		contentTypeDirectory, id, count, offset)
+		contentTypeDirectory, parentID, count, offset)
 
 	if err != nil {
 		return nil
@@ -264,6 +264,7 @@ func (m *filesDB) GetMetaDataForChildrenOfID(id int64, offset int, count int) in
 	fsm := new(dirMeta)
 	for rows.Next() {
 		fm := new(fileMeta)
+		fm.PID = parentID
 		if err := rows.Scan(&fm.ID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
 			return nil
 		}

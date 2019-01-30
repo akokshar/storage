@@ -15,7 +15,7 @@ const (
 	paramBasedirName = "basedir"
 	defaultBasedir   = "/Users/akoksharov/Downloads/Store"
 	paramPortName    = "port"
-	defaultPort      = "8085"
+	defaultPort      = "8080"
 )
 
 func main() {

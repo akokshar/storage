@@ -21,6 +21,7 @@ type fileItem struct {
 
 type fileMeta struct {
 	ID    int64  `json:"id"`
+	PID   int64  `json:"pid"`
 	Size  int64  `json:"size"`
 	MDate int64  `json:"mdate"`
 	CDate int64  `json:"cdate"`
