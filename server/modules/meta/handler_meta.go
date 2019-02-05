@@ -55,19 +55,15 @@ func (m *meta) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {
 	var metaData interface{}
 	var id int64
 
-	if opts.Get("id") != "" {
-		optsID, err := strconv.Atoi(opts.Get("id"))
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		id = int64(optsID)
-	} else {
+	optsID, err := strconv.Atoi(opts.Get("id"))
+	if err != nil {
 		localFilePath := r.Header.Get("X-Local-Filepath")
 		if id, err = m.filesDB.GetIDForPath(localFilePath); err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+	} else {
+		id = int64(optsID)
 	}
 
 	if opts.Get("enumerate") != "" {

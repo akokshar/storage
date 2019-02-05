@@ -237,7 +237,7 @@ func (m *filesDB) GetMetaDataForItemWithID(id int64) interface{} {
 				mdate, cdate, name, ctype 
 		FROM files WHERE id=$2`,
 		contentTypeDirectory, id)
-	if err := row.Scan(&fm.ID, &fm.PID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
+	if err := row.Scan(&fm.ID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
 		return nil
 	}
 
@@ -261,15 +261,13 @@ func (m *filesDB) GetMetaDataForChildrenOfID(parentID int64, offset int, count i
 		return nil
 	}
 
-	fsm := new(dirMeta)
+	fileList := make([]*fileMeta, 0, count)
 	for rows.Next() {
 		fm := new(fileMeta)
-		fm.PID = parentID
 		if err := rows.Scan(&fm.ID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
 			return nil
 		}
-		fsm.Files = append(fsm.Files, fm)
+		fileList = append(fileList, fm)
 	}
-	fsm.Offset = offset
-	return fsm
+	return fileList
 }
