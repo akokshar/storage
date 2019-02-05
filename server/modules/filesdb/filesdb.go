@@ -229,7 +229,7 @@ func (m *filesDB) GetMetaDataForItemWithID(id int64) interface{} {
 	fm := new(fileMeta)
 
 	row := m.database.QueryRow(`
-		SELECT 	id, parent_id,
+		SELECT 	id,
 				CASE ctype 
 					WHEN $1 THEN (SELECT count(*) FROM files AS f_size WHERE f_size.parent_id=files.id)
 					ELSE size
