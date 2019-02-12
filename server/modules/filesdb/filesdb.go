@@ -37,8 +37,9 @@ func NewFilesDB(dbFile string) modules.FilesDB {
 
 	_, err = database.Exec(`
 		PRAGMA foreign_keys = ON;
+		/* autoincrement is not needed, as integer primary key becomes an alias to the rowid */
 		CREATE TABLE IF NOT EXISTS files (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id INTEGER PRIMARY KEY,
 			parent_id INTEGER,
 			scan_time DATETIME,
 
@@ -51,13 +52,32 @@ func NewFilesDB(dbFile string) modules.FilesDB {
 			CONSTRAINT fk_parent
 				FOREIGN KEY (parent_id) 
 				REFERENCES files (id)
-				ON DELETE CASCADE
+				ON DELETE CASCADE,
 
 			CONSTRAINT k_filename
 				UNIQUE (parent_id, name)
 				ON CONFLICT ROLLBACK
-			);
-		`)
+		);
+
+		CREATE TABLE IF NOT EXISTS client (
+			id INTEGER,
+			name VARCHAR(32)
+		);
+
+		CREATE TABLE IF NOT EXISTS changelog (
+			file_id INTEGER,
+			action INTEGER,
+			client_id INTEGER,
+
+			CONSTRAINT fk_file
+				FOREIGN KEY (file_id)
+				REFERENCES files (id),
+
+			CONSTRAINT fk_client
+				FOREIGN KEY (client_id)
+				REFERENCES client (id)
+		);
+	`)
 	if err != nil {
 		log.Fatal(err)
 	}
