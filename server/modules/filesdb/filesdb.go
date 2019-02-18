@@ -372,7 +372,7 @@ func (m *filesDB) GetChangesInDirectorySince(id int64, syncAnchor int64, count i
 	}{
 		New:    make([]*fileMeta, 0, count),
 		Erase:  make([]int64, 0, count),
-		Anchor: 0,
+		Anchor: syncAnchor,
 		Remain: 0,
 	}
 
