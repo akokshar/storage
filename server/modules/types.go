@@ -15,5 +15,8 @@ type FilesDB interface {
 	GetPathForID(int64) (string, error)
 	GetIDForPath(string) (int64, error)
 	GetMetaDataForItemWithID(int64) interface{}
-	GetMetaDataForChildrenOfID(id int64, offset int, count int) interface{}
+	GetChangesInDirectorySince(id int64, syncAnchor int64, count int) interface{}
+
+	ImportItem(parentID int64, itemPath string) (id int64, err error)
+	RemoveItem(id int64) (err error)
 }

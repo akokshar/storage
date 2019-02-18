@@ -10,7 +10,6 @@ import (
 
 	"github.com/akokshar/storage/server/modules"
 	"github.com/akokshar/storage/server/modules/filesdb"
-	"github.com/akokshar/storage/server/modules/meta"
 	"github.com/akokshar/storage/server/modules/photos"
 	"github.com/akokshar/storage/server/modules/store"
 )
@@ -69,7 +68,6 @@ func CreateApplication(basedir string) http.Handler {
 		filesDB:  filesdb.NewFilesDB(path.Join(basedir, ".meta.db")),
 	}
 
-	app.registerHandler(meta.New(app.filesDB, "/meta", basedir))
 	app.registerHandler(store.New(app.filesDB, "/store", path.Join(basedir, "store")))
 	app.registerHandler(photos.New("/photos", path.Join(basedir, "photos")))
 

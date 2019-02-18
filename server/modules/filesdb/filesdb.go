@@ -14,6 +14,14 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+const (
+	actionAdd = iota
+	actionTrash
+	actionErase
+	actionMoveOut
+	actionMoveIn
+)
+
 type filesDB struct {
 	startTime int64
 	dbFile    string
@@ -37,9 +45,8 @@ func NewFilesDB(dbFile string) modules.FilesDB {
 
 	_, err = database.Exec(`
 		PRAGMA foreign_keys = ON;
-		/* autoincrement is not needed, as integer primary key becomes an alias to the rowid */
 		CREATE TABLE IF NOT EXISTS files (
-			id INTEGER PRIMARY KEY,
+			id INTEGER PRIMARY KEY AUTOINCREMENT, /* need ids not tu be reused */
 			parent_id INTEGER,
 			scan_time DATETIME,
 
@@ -59,23 +66,15 @@ func NewFilesDB(dbFile string) modules.FilesDB {
 				ON CONFLICT ROLLBACK
 		);
 
-		CREATE TABLE IF NOT EXISTS client (
-			id INTEGER,
-			name VARCHAR(32)
-		);
-
 		CREATE TABLE IF NOT EXISTS changelog (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, /* to be used as a sync anchor */
+			parent_id INTEGER,
 			file_id INTEGER,
 			action INTEGER,
-			client_id INTEGER,
 
-			CONSTRAINT fk_file
-				FOREIGN KEY (file_id)
-				REFERENCES files (id),
-
-			CONSTRAINT fk_client
-				FOREIGN KEY (client_id)
-				REFERENCES client (id)
+			CONSTRAINT k_lastchange
+				UNIQUE (parent_id, file_id)
+				ON CONFLICT REPLACE
 		);
 	`)
 	if err != nil {
@@ -95,6 +94,74 @@ func NewFilesDB(dbFile string) modules.FilesDB {
 	}
 
 	return db
+}
+
+func (m *filesDB) dbAddFile(parentID int64, fm *fileMeta) (id int64, err error) {
+	tx, err := m.database.Begin()
+	if err != nil {
+		return
+	}
+
+	res, err := tx.Exec(
+		"insert into files (parent_id, scan_time, size, mdate, cdate, name, ctype) values ($1, $2, $3, $4, $5, $6, $7)",
+		parentID, m.startTime, fm.Size, fm.MDate, fm.CDate, fm.Name, fm.CType)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	id, err = res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	res, err = tx.Exec(
+		"insert into changelog (parent_id, file_id, action) values ($1, $2, $3)",
+		parentID, id, actionAdd)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	tx.Commit()
+	return
+}
+
+func (m *filesDB) dbRemoveFile(id int64) (err error) {
+	tx, err := m.database.Begin()
+	if err != nil {
+		return
+	}
+
+	var parentID int64
+	row := tx.QueryRow(`SELECT parent_id FROM files where id = ?`, id)
+	if err = row.Scan(&parentID); err != nil {
+		return
+	}
+
+	_, err = tx.Exec(
+		"delete from files where id = $1",
+		id)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	_, err = tx.Exec(
+		"insert into changelog (parent_id, file_id, action) values ($1, $2, $3)",
+		parentID, id, actionErase)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	tx.Commit()
+	return
+}
+
+func (m *filesDB) dbMoveFile(id int64, newParent int64) {
+
 }
 
 func (m *filesDB) ScanPath(p string) int64 {
@@ -213,6 +280,20 @@ func (m *filesDB) ScanPath(p string) int64 {
 	return parentID
 }
 
+func (m *filesDB) ImportItem(parentID int64, itemPath string) (id int64, err error) {
+	item, err := createFileItem(itemPath)
+	if err != nil {
+		return
+	}
+	id, err = m.dbAddFile(parentID, item.fileMeta())
+	return
+}
+
+func (m *filesDB) RemoveItem(id int64) (err error) {
+	err = m.dbRemoveFile(id)
+	return
+}
+
 func (m *filesDB) GetPathForID(id int64) (string, error) {
 	p := ""
 	for id != m.rootID {
@@ -223,7 +304,7 @@ func (m *filesDB) GetPathForID(id int64) (string, error) {
 		}
 		p = path.Join(c, p)
 	}
-	return p, nil
+	return path.Join("/", p), nil
 }
 
 func (m *filesDB) GetIDForPath(p string) (int64, error) {
@@ -264,30 +345,73 @@ func (m *filesDB) GetMetaDataForItemWithID(id int64) interface{} {
 	return fm
 }
 
-func (m *filesDB) GetMetaDataForChildrenOfID(parentID int64, offset int, count int) interface{} {
-	rows, err := m.database.Query(`
-		SELECT 	id, 
+func (m *filesDB) GetChangesInDirectorySince(id int64, syncAnchor int64, count int) interface{} {
+	changes, err := m.database.Query(`
+		SELECT  changelog.id, changelog.file_id, changelog.action, 
+				files.name, files.ctype, files.mdate, files.cdate,
 				CASE ctype 
 					WHEN $1 THEN (SELECT count(*) FROM files AS f_size WHERE f_size.parent_id=files.id)
 					ELSE size
-				END item_size, 
-				mdate, cdate, name, ctype 
-		FROM files WHERE parent_id=$2
-		ORDER BY ctype ASC, name ASC
-		LIMIT $3 OFFSET $4`,
-		contentTypeDirectory, parentID, count, offset)
+				END item_size
+				FROM changelog LEFT JOIN files ON changelog.file_id = files.id 
+				WHERE changelog.parent_id = $2 AND changelog.id > $3
+				ORDER BY changelog.id ASC
+				LIMIT $4`,
+		contentTypeDirectory, id, syncAnchor, count)
 
 	if err != nil {
+		log.Printf("%v", err)
 		return nil
 	}
 
-	fileList := make([]*fileMeta, 0, count)
-	for rows.Next() {
+	result := struct {
+		New    []*fileMeta `json:"new"`
+		Erase  []int64     `json:"erase"`
+		Anchor int64       `json:"anchor"`
+		Remain int         `json:"remain"`
+	}{
+		New:    make([]*fileMeta, 0, count),
+		Erase:  make([]int64, 0, count),
+		Anchor: 0,
+		Remain: 0,
+	}
+
+	for changes.Next() {
 		fm := new(fileMeta)
-		if err := rows.Scan(&fm.ID, &fm.Size, &fm.MDate, &fm.CDate, &fm.Name, &fm.CType); err != nil {
+		var action int64
+		var name, ctype sql.NullString
+		var mdate, cdate, size sql.NullInt64
+		if err := changes.Scan(&result.Anchor, &fm.ID, &action, &name, &ctype, &mdate, &cdate, &size); err != nil {
+			log.Printf("%v", err)
 			return nil
 		}
-		fileList = append(fileList, fm)
+
+		switch action {
+		case actionAdd:
+			fm.Name = name.String
+			fm.CType = ctype.String
+			fm.MDate = mdate.Int64
+			fm.CDate = cdate.Int64
+			fm.Size = size.Int64
+			result.New = append(result.New, fm)
+			break
+		case actionErase:
+			result.Erase = append(result.Erase, fm.ID)
+			break
+		default:
+			continue
+		}
 	}
-	return fileList
+
+	recordsLeft := m.database.QueryRow(`
+		SELECT count(*) FROM changelog
+		WHERE parent_id = $1 and id > $2`,
+		id, result.Anchor)
+
+	if err := recordsLeft.Scan(&result.Remain); err != nil {
+		log.Printf("%v", err)
+		return nil
+	}
+
+	return result
 }
