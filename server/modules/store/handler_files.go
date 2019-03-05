@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 
@@ -78,7 +77,7 @@ func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	rawID, err := strconv.Atoi(opts.Get(optID))
 	if err != nil {
-		if opts.Get(optID) == "NSFileProviderRootContainerItemIdentifier" {
+		if opts.Get(optID) == "myFiles" {
 			id = s.rootID
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
@@ -140,7 +139,7 @@ func (s *store) createFile(w http.ResponseWriter, r *http.Request) {
 	var parentID int64
 	rawParentID, err := strconv.Atoi(opts.Get(optParentID))
 	if err != nil {
-		if opts.Get(optParentID) == "NSFileProviderRootContainerItemIdentifier" {
+		if opts.Get(optParentID) == "myFiles" {
 			parentID = s.rootID
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
@@ -166,53 +165,48 @@ func (s *store) createFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath := path.Join(parentPath, name)
-	id, err := s.filesDB.GetIDForPath(filePath)
-	if err == nil {
-		w.WriteHeader(http.StatusConflict)
+	id, err := s.filesDB.CreateItemPlaceholder(parentID, name)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	filePath, err := s.filesDB.GetPathForID(id)
 
 	if opts.Get(optCmd) == optCmdCreateDir {
-		err = os.Mkdir(filePath, 0755)
+		// the directory might exist. Do not rase an error, just consume existing directory.
+		os.Mkdir(filePath, 0755)
+		err = s.filesDB.ImportItem(id, filePath)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		id, err = s.filesDB.ImportItem(parentID, filePath)
-		if err != nil {
-			os.Remove(filePath)
+			s.filesDB.DeleteItemPlaceholder(id)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 	} else {
 		f, err := os.Create(filePath)
 		if err != nil {
+			s.filesDB.DeleteItemPlaceholder(id)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		//defer f.Close()
+		defer f.Close()
 
-		var copyErr, dbErr error
-		_, copyErr = io.CopyN(f, r.Body, 512)
-		id, dbErr = s.filesDB.ImportItem(parentID, filePath)
-		if dbErr != nil || copyErr != nil {
-			log.Printf("%v", err)
-			w.WriteHeader(http.StatusInternalServerError)
+		// TODO: http://www.grid.net.ru/nginx/resumable_uploads.en.html
+		_, err = io.Copy(f, r.Body)
+		if err != nil {
+			s.filesDB.DeleteItemPlaceholder(id)
 			os.Remove(filePath)
-			s.filesDB.RemoveItem(id)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		go func() {
-			// TODO: http://www.grid.net.ru/nginx/resumable_uploads.en.html
-			_, err = io.Copy(f, r.Body)
-			if err != nil {
-				os.Remove(filePath)
-				s.filesDB.RemoveItem(id)
-			}
-			f.Close()
-		}()
+		err = s.filesDB.ImportItem(id, filePath)
+		if err != nil {
+			log.Printf("%v", err)
+			s.filesDB.DeleteItemPlaceholder(id)
+			os.Remove(filePath)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
 
 	metaData := s.filesDB.GetMetaDataForItemWithID(id)

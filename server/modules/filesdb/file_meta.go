@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 const (
@@ -41,8 +40,9 @@ func createFileItem(path string) (*fileItem, error) {
 		return nil, err
 	}
 
-	if (!fi.Mode().IsDir() && !fi.Mode().IsRegular()) || strings.HasPrefix(fi.Name(), ".") {
-		return nil, errors.New("Not a directory, regular file or is hidden")
+	//	if (!fi.Mode().IsDir() && !fi.Mode().IsRegular()) || strings.HasPrefix(fi.Name(), ".") {
+	if !fi.Mode().IsDir() && !fi.Mode().IsRegular() {
+		return nil, errors.New("Not a directory, regular file")
 	}
 
 	f := &fileItem{

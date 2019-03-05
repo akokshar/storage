@@ -3,6 +3,7 @@ package filesdb
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path"
@@ -96,38 +97,6 @@ func NewFilesDB(dbFile string) modules.FilesDB {
 	return db
 }
 
-func (m *filesDB) dbAddFile(parentID int64, fm *fileMeta) (id int64, err error) {
-	tx, err := m.database.Begin()
-	if err != nil {
-		return
-	}
-
-	res, err := tx.Exec(
-		"insert into files (parent_id, scan_time, size, mdate, cdate, name, ctype) values ($1, $2, $3, $4, $5, $6, $7)",
-		parentID, m.startTime, fm.Size, fm.MDate, fm.CDate, fm.Name, fm.CType)
-	if err != nil {
-		tx.Rollback()
-		return
-	}
-
-	id, err = res.LastInsertId()
-	if err != nil {
-		tx.Rollback()
-		return
-	}
-
-	res, err = tx.Exec(
-		"insert into changelog (parent_id, file_id, action) values ($1, $2, $3)",
-		parentID, id, actionAdd)
-	if err != nil {
-		tx.Rollback()
-		return
-	}
-
-	tx.Commit()
-	return
-}
-
 func (m *filesDB) dbRemoveFile(id int64) (err error) {
 	tx, err := m.database.Begin()
 	if err != nil {
@@ -157,6 +126,114 @@ func (m *filesDB) dbRemoveFile(id int64) (err error) {
 	}
 
 	tx.Commit()
+	return
+}
+
+func (m *filesDB) dbCreateItemPlaceholder(parentID int64, name string) (id int64, err error) {
+	tx, err := m.database.Begin()
+	if err != nil {
+		panic(fmt.Sprintf("Failed at CreateItemPlaceholder '%v'", err))
+	}
+
+	res, err := tx.Exec("insert into files (parent_id, name) values ($1, $2)", parentID, name)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	id, err = res.LastInsertId()
+	if err != nil {
+		tx.Rollback()
+		panic(fmt.Sprintf("Failed at CreateItemPlaceholder '%v'", err))
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		panic(fmt.Sprintf("Failed at CreateItemPlaceholder '%v'", err))
+	}
+	return
+}
+
+// CreateItemPlaceholder creates a unique record in files table, so it hosds a parent/name constraint
+// Since not record created in changelog, other user wont be able to see this file until import is finished.
+func (m *filesDB) CreateItemPlaceholder(parentID int64, name string) (id int64, err error) {
+	fileExt := path.Ext(name)
+	fileName := name[0 : len(name)-len(fileExt)]
+	id = 0
+	for suffix := 0; suffix < 100; suffix++ {
+		if suffix > 0 {
+			name = fmt.Sprintf("%s-%d.%s", fileName, suffix, fileExt)
+		}
+		id, err = m.dbCreateItemPlaceholder(parentID, name)
+		if err == nil {
+			return
+		}
+	}
+	return
+}
+
+func (m *filesDB) dbDeleteItemPlaceholder(id int64) {
+	tx, err := m.database.Begin()
+	if err != nil {
+		panic(fmt.Sprintf("Failed at DeleteItemPlaceholder '%v'", err))
+	}
+
+	tx.Exec("delete from files where id = $1", id)
+
+	err = tx.Commit()
+	if err != nil {
+		panic(fmt.Sprintf("Failed at DeleteItemPlaceholder '%v'", err))
+	}
+}
+
+func (m *filesDB) DeleteItemPlaceholder(id int64) {
+	m.dbDeleteItemPlaceholder(id)
+}
+
+func (m *filesDB) dbImportItem(itemID int64, fm *fileMeta) (err error) {
+	tx, err := m.database.Begin()
+	if err != nil {
+		return
+	}
+
+	_, err = tx.Exec(
+		"update files set scan_time = $1, size = $2, mdate = $3, cdate = $4, ctype = $5 where id = $6",
+		m.startTime, fm.Size, fm.MDate, fm.CDate, fm.CType, itemID)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	var parentID int64
+	row := tx.QueryRow(`SELECT parent_id FROM files where id = ?`, itemID)
+	if err = row.Scan(&parentID); err != nil {
+		tx.Rollback()
+		return
+	}
+
+	_, err = tx.Exec(
+		"insert into changelog (parent_id, file_id, action) values ($1, $2, $3)",
+		parentID, itemID, actionAdd)
+	if err != nil {
+		tx.Rollback()
+		return
+	}
+
+	tx.Commit()
+	return
+}
+
+func (m *filesDB) ImportItem(itemID int64, itemPath string) (err error) {
+	item, err := createFileItem(itemPath)
+	if err != nil {
+		return
+	}
+	err = m.dbImportItem(itemID, item.fileMeta())
+	return
+}
+
+func (m *filesDB) RemoveItem(id int64) (err error) {
+	err = m.dbRemoveFile(id)
 	return
 }
 
@@ -278,20 +355,6 @@ func (m *filesDB) ScanPath(p string) int64 {
 	log.Printf("Done")
 
 	return parentID
-}
-
-func (m *filesDB) ImportItem(parentID int64, itemPath string) (id int64, err error) {
-	item, err := createFileItem(itemPath)
-	if err != nil {
-		return
-	}
-	id, err = m.dbAddFile(parentID, item.fileMeta())
-	return
-}
-
-func (m *filesDB) RemoveItem(id int64) (err error) {
-	err = m.dbRemoveFile(id)
-	return
 }
 
 func (m *filesDB) GetPathForID(id int64) (string, error) {
