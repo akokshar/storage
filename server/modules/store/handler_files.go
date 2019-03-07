@@ -77,7 +77,7 @@ func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	rawID, err := strconv.Atoi(opts.Get(optID))
 	if err != nil {
-		if opts.Get(optID) == "myFiles" {
+		if opts.Get(optID) == "files" {
 			id = s.rootID
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
@@ -139,7 +139,7 @@ func (s *store) createFile(w http.ResponseWriter, r *http.Request) {
 	var parentID int64
 	rawParentID, err := strconv.Atoi(opts.Get(optParentID))
 	if err != nil {
-		if opts.Get(optParentID) == "myFiles" {
+		if opts.Get(optParentID) == "files" {
 			parentID = s.rootID
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
