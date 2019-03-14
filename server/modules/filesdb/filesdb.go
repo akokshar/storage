@@ -432,11 +432,13 @@ func (m *filesDB) GetChangesInDirectorySince(id int64, syncAnchor int64, count i
 		Erase  []int64     `json:"erase"`
 		Anchor int64       `json:"anchor"`
 		Remain int         `json:"remain"`
+		Size   int64       `json:"size"`
 	}{
 		New:    make([]*fileMeta, 0, count),
 		Erase:  make([]int64, 0, count),
 		Anchor: syncAnchor,
 		Remain: 0,
+		Size:   0,
 	}
 
 	for changes.Next() {
@@ -472,6 +474,12 @@ func (m *filesDB) GetChangesInDirectorySince(id int64, syncAnchor int64, count i
 		id, result.Anchor)
 
 	if err := recordsLeft.Scan(&result.Remain); err != nil {
+		log.Printf("%v", err)
+		return nil
+	}
+
+	itemSize := m.database.QueryRow(`SELECT count(*) FROM files where parent_id = $1`, id)
+	if err := itemSize.Scan(&result.Size); err != nil {
 		log.Printf("%v", err)
 		return nil
 	}
