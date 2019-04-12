@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/akokshar/storage/server/modules"
+	"github.com/akokshar/storage/server/modules/files"
 	"github.com/akokshar/storage/server/modules/filesdb"
 	"github.com/akokshar/storage/server/modules/photos"
-	"github.com/akokshar/storage/server/modules/store"
 )
 
 type application struct {
@@ -68,7 +68,7 @@ func CreateApplication(basedir string) http.Handler {
 		filesDB:  filesdb.NewFilesDB(path.Join(basedir, ".meta.db")),
 	}
 
-	app.registerHandler(store.New(app.filesDB, "/store", path.Join(basedir, "store")))
+	app.registerHandler(files.New(app.filesDB, "/files", path.Join(basedir, "files")))
 	app.registerHandler(photos.New("/photos", path.Join(basedir, "photos")))
 
 	return app

@@ -1,4 +1,4 @@
-package store
+package files
 
 import (
 	"compress/gzip"
@@ -29,7 +29,7 @@ const (
 	optCountDefaultValue  = 10
 )
 
-type store struct {
+type files struct {
 	routePrefix string
 	basedir     string
 	filesDB     modules.FilesDB
@@ -38,36 +38,36 @@ type store struct {
 
 // New initializes backend to server files
 func New(db modules.FilesDB, prefix string, basedir string) modules.HTTPHandler {
-	return &store{
+	return &files{
 		routePrefix: prefix,
 		basedir:     basedir,
 		filesDB:     db,
-		rootID:      db.ScanPath(basedir),
+		rootID:      db.ScanPath(basedir), // FIXME: rootID is not initialized corretly on first run.
 	}
 }
 
-func (s *store) GetRoutePrefix() string {
-	return s.routePrefix
+func (f *files) GetRoutePrefix() string {
+	return f.routePrefix
 }
 
-func (s *store) GetBaseDir() string {
-	return s.basedir
+func (f *files) GetBaseDir() string {
+	return f.basedir
 }
 
-func (s *store) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {
+func (f *files) ServeHTTPRequest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		s.getFile(w, r)
+		f.getFile(w, r)
 	case http.MethodPost:
-		s.createFile(w, r)
+		f.createFile(w, r)
 	case http.MethodDelete:
-		s.deleteFile(w, r)
+		f.deleteFile(w, r)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
+func (f *files) getFile(w http.ResponseWriter, r *http.Request) {
 	opts, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -78,7 +78,7 @@ func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
 	rawID, err := strconv.Atoi(opts.Get(optID))
 	if err != nil {
 		if opts.Get(optID) == "NSFileProviderRootContainerItemIdentifier" {
-			id = s.rootID
+			id = f.rootID
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -87,7 +87,7 @@ func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
 		id = int64(rawID)
 	}
 
-	idPath, err := s.filesDB.GetPathForID(id)
+	idPath, err := f.filesDB.GetPathForID(id)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -99,7 +99,7 @@ func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
 
 	switch opts.Get(optCmd) {
 	case optCmdInfo:
-		metaData := s.filesDB.GetMetaDataForItemWithID(id)
+		metaData := f.filesDB.GetMetaDataForItemWithID(id)
 		metaJSON, _ := json.MarshalIndent(metaData, "", "  ")
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(metaJSON)
@@ -113,7 +113,7 @@ func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
 			count = optCountDefaultValue
 		}
 
-		metaData := s.filesDB.GetChangesInDirectorySince(id, int64(syncAnchor), count)
+		metaData := f.filesDB.GetChangesInDirectorySince(id, int64(syncAnchor), count)
 		metaJSON, _ := json.MarshalIndent(metaData, "", "  ")
 
 		w.Header().Set("Content-Type", "application/json")
@@ -129,7 +129,7 @@ func (s *store) getFile(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (s *store) createFile(w http.ResponseWriter, r *http.Request) {
+func (f *files) createFile(w http.ResponseWriter, r *http.Request) {
 	opts, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -140,7 +140,7 @@ func (s *store) createFile(w http.ResponseWriter, r *http.Request) {
 	rawParentID, err := strconv.Atoi(opts.Get(optParentID))
 	if err != nil {
 		if opts.Get(optParentID) == "NSFileProviderRootContainerItemIdentifier" {
-			parentID = s.rootID
+			parentID = f.rootID
 		} else {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -155,7 +155,7 @@ func (s *store) createFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	parentPath, err := s.filesDB.GetPathForID(parentID)
+	parentPath, err := f.filesDB.GetPathForID(parentID)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -165,58 +165,58 @@ func (s *store) createFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := s.filesDB.CreateItemPlaceholder(parentID, name)
+	id, err := f.filesDB.CreateItemPlaceholder(parentID, name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	filePath, err := s.filesDB.GetPathForID(id)
+	filePath, err := f.filesDB.GetPathForID(id)
 
 	if opts.Get(optCmd) == optCmdCreateDir {
 		// the directory might exist. Do not rase an error, just consume existing directory.
 		os.Mkdir(filePath, 0755)
-		err = s.filesDB.ImportItem(id, filePath)
+		err = f.filesDB.ImportItem(id, filePath)
 		if err != nil {
-			s.filesDB.DeleteItemPlaceholder(id)
+			f.filesDB.DeleteItemPlaceholder(id)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 	} else {
-		f, err := os.Create(filePath)
+		nf, err := os.Create(filePath)
 		if err != nil {
-			s.filesDB.DeleteItemPlaceholder(id)
+			f.filesDB.DeleteItemPlaceholder(id)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		defer f.Close()
+		defer nf.Close()
 
 		// TODO: http://www.grid.net.ru/nginx/resumable_uploads.en.html
-		_, err = io.Copy(f, r.Body)
+		_, err = io.Copy(nf, r.Body)
 		if err != nil {
-			s.filesDB.DeleteItemPlaceholder(id)
+			f.filesDB.DeleteItemPlaceholder(id)
 			os.Remove(filePath)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		err = s.filesDB.ImportItem(id, filePath)
+		err = f.filesDB.ImportItem(id, filePath)
 		if err != nil {
 			log.Printf("%v", err)
-			s.filesDB.DeleteItemPlaceholder(id)
+			f.filesDB.DeleteItemPlaceholder(id)
 			os.Remove(filePath)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 	}
 
-	metaData := s.filesDB.GetMetaDataForItemWithID(id)
+	metaData := f.filesDB.GetMetaDataForItemWithID(id)
 	metaJSON, _ := json.MarshalIndent(metaData, "", "  ")
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	w.Write(metaJSON)
 }
 
-func (s *store) deleteFile(w http.ResponseWriter, r *http.Request) {
+func (f *files) deleteFile(w http.ResponseWriter, r *http.Request) {
 	opts, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -231,12 +231,12 @@ func (s *store) deleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 	id = int64(rawID)
 
-	if id == s.rootID {
+	if id == f.rootID {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 
-	idPath, err := s.filesDB.GetPathForID(id)
+	idPath, err := f.filesDB.GetPathForID(id)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -246,7 +246,7 @@ func (s *store) deleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.filesDB.RemoveItem(id)
+	err = f.filesDB.RemoveItem(id)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
