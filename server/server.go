@@ -27,8 +27,7 @@ func (app *application) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		localFilePath := path.Join(h.GetBaseDir(), strings.TrimPrefix(r.URL.Path, h.GetRoutePrefix()))
 		if !strings.HasPrefix(localFilePath, h.GetBaseDir()) {
 			log.Print(fmt.Sprintf("Access to '%s' denied", localFilePath))
-			w.WriteHeader(http.StatusForbidden)
-			return
+			break
 		}
 		//r.URL.Path = localFilePath
 		r.Header.Add("X-Local-Filepath", localFilePath)
